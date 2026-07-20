@@ -5,9 +5,9 @@ import requests
 from duckduckgo_search import DDGS
 
 # Config
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_QURAN")    # Ubah ke DISCORD_TOKEN_QURAN
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_QURAN")
 HF_TOKEN = os.getenv("HF_TOKEN")
-MODEL_URL = "MODEL_URL = "https://router.huggingface.co/hf-inference/models/NousResearch/Hermes-2-Pro-Mistral-7B"
+MODEL_URL = "https://router.huggingface.co/hf-inference/models/NousResearch/Hermes-2-Pro-Mistral-7B"
 headers = {"Authorization": f"Bearer {HF_TOKEN}"}
 
 SYSTEM_PROMPT = """
@@ -21,6 +21,7 @@ Aturan respons:
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!quran ", intents=intents)
+
 def cari_web(query):
     try:
         results = []
@@ -41,7 +42,11 @@ async def on_ready():
 async def tanya(ctx, *, prompt: str):
     async with ctx.typing():
         formatted_prompt = f"<|im_start|>system\n{SYSTEM_PROMPT}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n"
-        payload = {"inputs": formatted_prompt, "parameters": {"max_new_tokens": 500, "temperature": 0.5, "return_full_text": False}}
+        payload = {
+            "inputs": formatted_prompt, 
+            "parameters": {"max_new_tokens": 500, "temperature": 0.5, "return_full_text": False},
+            "options": {"wait_for_model": True}
+        }
         
         try:
             res = requests.post(MODEL_URL, headers=headers, json=payload, timeout=30)
@@ -50,7 +55,7 @@ async def tanya(ctx, *, prompt: str):
                 ans = data[0].get("generated_text", "Maaf, tidak ada respon.") if isinstance(data, list) else str(data)
                 await ctx.reply(ans[:1900])
             else:
-                await ctx.reply("⚠️ AI sedang sibuk, silakan coba lagi.")
+                await ctx.reply("⚠️ AI sedang sibuk, silakan coba lagi beberapa saat lagi.")
         except Exception as e:
             await ctx.reply(f"⚠️ Error: {e}")
 
@@ -60,7 +65,11 @@ async def cari(ctx, *, query: str):
         web_data = cari_web(query)
         full_prompt = f"Gunakan data referensi berikut untuk menjawab pertanyaan teologis/ayat:\n\nREFERENSI:\n{web_data}\n\nPERTANYAAN: {query}"
         formatted_prompt = f"<|im_start|>system\n{SYSTEM_PROMPT}<|im_end|>\n<|im_start|>user\n{full_prompt}<|im_end|>\n<|im_start|>assistant\n"
-        payload = {"inputs": formatted_prompt, "parameters": {"max_new_tokens": 600, "temperature": 0.3, "return_full_text": False}}
+        payload = {
+            "inputs": formatted_prompt, 
+            "parameters": {"max_new_tokens": 600, "temperature": 0.3, "return_full_text": False},
+            "options": {"wait_for_model": True}
+        }
         
         try:
             res = requests.post(MODEL_URL, headers=headers, json=payload, timeout=30)
