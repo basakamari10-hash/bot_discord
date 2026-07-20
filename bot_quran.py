@@ -7,7 +7,7 @@ from duckduckgo_search import DDGS
 # Config
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_QURAN")    # Ubah ke DISCORD_TOKEN_QURAN
 HF_TOKEN = os.getenv("HF_TOKEN")
-MODEL_URL = "https://router.huggingface.co/hf-inference/models/mujadid-syahbana/alquran-verse-recitation-wave2vec2-xls-r-model"
+MODEL_URL = "MODEL_URL = "https://router.huggingface.co/hf-inference/models/NousResearch/Hermes-2-Pro-Mistral-7B"
 headers = {"Authorization": f"Bearer {HF_TOKEN}"}
 
 SYSTEM_PROMPT = """
