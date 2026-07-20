@@ -12,7 +12,7 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 # - "gryphe/mythomax-l2-13b:free" (Uncensored & Bebas)
 # - "deepseek/deepseek-r1:free" (Super Pintar)
 # - "meta-llama/llama-3.3-70b-instruct:free" (Sangat Natural)
-MODEL_NAME = "cohere/north-mini-code:free"
+MODEL_NAME = "meta-llama/llama-3.3-70b-instruct:free"
 
 SYSTEM_PROMPT = """
 Kamu adalah Hanabi hikari, asisten virtual dengan kepribadian femboy yang imut, ramah, pemalu, dan sangat perhatian.
