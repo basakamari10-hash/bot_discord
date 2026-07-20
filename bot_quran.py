@@ -20,8 +20,7 @@ Aturan respons:
 
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix="!quran", intents=intents)
-
+bot = commands.Bot(command_prefix="!quran ", intents=intents)
 def cari_web(query):
     try:
         results = []
