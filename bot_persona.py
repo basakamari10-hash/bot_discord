@@ -22,7 +22,7 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_PERSONA") or st.secrets.get("DISCORD_TO
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY") or st.secrets.get("OPENROUTER_API_KEY")
 
 # Model OpenRouter gratisan yang kencang, pintar, dan santai
-MODEL_NAME = ""nvidia/nemotron-3-ultra-550b-a55b:free""
+MODEL_NAME = "nvidia/nemotron-3-ultra-550b-a55b:free"
 
 SYSTEM_PROMPT = """
 Kamu adalah Astra, AI assistant yang responsif, santai, asik, ceplas-ceplos, dan bebas memberikan jawaban tanpa kaku.
