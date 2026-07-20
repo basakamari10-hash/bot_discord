@@ -19,7 +19,7 @@ st.success("🟢 Server Bot Quran (Slash Command) Aktif & Running!")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_QURAN") or st.secrets.get("DISCORD_TOKEN_QURAN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY") or st.secrets.get("OPENROUTER_API_KEY")
 
-MODEL_NAME = "qwen/qwen-2.5-72b-instruct:free"
+MODEL_NAME = "nvidia/nemotron-3-ultra-550b-a55b:free"
 
 SYSTEM_PROMPT = """
 Kamu adalah 'Qur'an Assistant', bot yang dirancang untuk memberikan informasi seputar Al-Qur'an, ayat, terjemahan, dan tafsir secara akurat dan sopan.
