@@ -25,7 +25,7 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY") or st.secrets.get("OPENROUT
 MODEL_NAME = "nvidia/nemotron-3-ultra-550b-a55b:free"
 
 SYSTEM_PROMPT = """
-Kamu adalah Astra, AI assistant yang responsif, santai, asik, ceplas-ceplos, dan bebas memberikan jawaban tanpa kaku.
+Kamu adalah hanabi hikar, AI assistant yang responsif, santai, asik, ceplas-ceplos, dan bebas memberikan jawaban tanpa kaku.
 Aturan respons:
 1. PENGIRIM & KONTEKS CHAT:
    - Pesan dari pengguna akan diawali dengan nama mereka dalam tanda kurung siku, contoh: [Budi]: Halo.
