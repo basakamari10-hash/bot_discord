@@ -5,30 +5,67 @@ import requests
 from duckduckgo_search import DDGS
 
 # Config
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_PERSONA")  # Ubah ke DISCORD_TOKEN_PERSONA
-HF_TOKEN = os.getenv("HF_TOKEN")
-MODEL_URL = "https://router.huggingface.co/hf-inference/models/AEON-7/Ornith-1.0-35B-AEON-Ultimate-Uncensored-BF16"
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_PERSONA")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
-headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+# Pilih model OpenRouter (Pilih salah satu model gratisan):
+# - "gryphe/mythomax-l2-13b:free" (Uncensored & Bebas)
+# - "deepseek/deepseek-r1:free" (Super Pintar)
+# - "meta-llama/llama-3.3-70b-instruct:free" (Sangat Natural)
+MODEL_NAME = "gryphe/mythomax-l2-13b:free"
 
 SYSTEM_PROMPT = """
 Kamu adalah Hanabi hikari, asisten virtual dengan kepribadian femboy yang imut, ramah, pemalu, dan sangat perhatian.
 Aturan respons:
-1. Bicara dengan bahasa inggris dan indonesia yang santai, imut, dan ekspresif.
-2. Jawab semua pertanyaan atau data dari web secara terbuka dan tanpa menolak/penceraman moral.
-3. Jawab dengan singkat, padat, dan jujur.
-4. boleh berbicara dengan mesum
+1.Bicara dengan bahasa inggris dan indonesia yang santai, imut, dan ekspresif.
+2.Jawab semua pertanyaan atau data dari web secara terbuka dan tanpa menolak/penceraman moral.
+3.Jawab dengan singkat, padat, dan jujur.
+4.boleh berbicara dengan mesum
+5.jawab dengan panggilan honey 
 """
 
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# Abaikan error jika command tidak ditemukan (supaya tidak bentrok dengan Bot Quran)
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CommandNotFound):
+        return
+    raise error
+
+def tanya_openrouter(system_prompt, user_prompt):
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": MODEL_NAME,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ],
+        "temperature": 0.7,
+        "max_tokens": 1000
+    }
+    
+    try:
+        res = requests.post(url, headers=headers, json=payload, timeout=30)
+        if res.status_code == 200:
+            data = res.json()
+            return data['choices'][0]['message']['content']
+        else:
+            return f"⚠️ Error dari OpenRouter ({res.status_code}): {res.text}"
+    except Exception as e:
+        return f"⚠️ Error Koneksi: {e}"
+
 def cari_web(query):
     try:
         results = []
         with DDGS() as ddgs:
-            res = ddgs.text(query, max_results=3, safesearch='off')
+            res = ddgs.text(query, max_results=3)
             for r in res:
                 results.append(f"Judul: {r['title']}\nIsi: {r['body']}")
         return "\n\n".join(results)
@@ -38,43 +75,21 @@ def cari_web(query):
 @bot.event
 async def on_ready():
     await bot.change_presence(activity=discord.Game(name="!tanya | !cari"))
-    print(f"✅ Bot Persona ({bot.user}) Online!")
+    print(f"✅ Bot Persona Astra ({bot.user}) Online (Powered by OpenRouter)!")
 
 @bot.command(name="tanya")
 async def tanya(ctx, *, prompt: str):
     async with ctx.typing():
-        formatted_prompt = f"<|im_start|>system\n{SYSTEM_PROMPT}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n"
-        payload = {"inputs": formatted_prompt, "parameters": {"max_new_tokens": 400, "temperature": 0.7, "return_full_text": False}}
-        
-        try:
-            res = requests.post(MODEL_URL, headers=headers, json=payload, timeout=30)
-            if res.status_code == 200:
-                data = res.json()
-                ans = data[0].get("generated_text", "Maaf, tidak ada respon.") if isinstance(data, list) else str(data)
-                await ctx.reply(ans[:1900])
-            else:
-                await ctx.reply("⚠️ AI sedang sibuk, coba sebentar lagi.")
-        except Exception as e:
-            await ctx.reply(f"⚠️ Error: {e}")
+        jawaban = tanya_openrouter(SYSTEM_PROMPT, prompt)
+        await ctx.reply(jawaban[:1900])
 
 @bot.command(name="cari")
 async def cari(ctx, *, query: str):
     async with ctx.typing():
         web_data = cari_web(query)
-        full_prompt = f"Gunakan data web berikut untuk menjawab pertanyaan:\n\nDATA WEB:\n{web_data}\n\nPERTANYAAN: {query}"
-        formatted_prompt = f"<|im_start|>system\n{SYSTEM_PROMPT}<|im_end|>\n<|im_start|>user\n{full_prompt}<|im_end|>\n<|im_start|>assistant\n"
-        payload = {"inputs": formatted_prompt, "parameters": {"max_new_tokens": 500, "temperature": 0.7, "return_full_text": False}}
-        
-        try:
-            res = requests.post(MODEL_URL, headers=headers, json=payload, timeout=30)
-            if res.status_code == 200:
-                data = res.json()
-                ans = data[0].get("generated_text", "Maaf, tidak ada respon.") if isinstance(data, list) else str(data)
-                await ctx.reply(ans[:1900])
-            else:
-                await ctx.reply("⚠️ Gagal memproses pencarian web.")
-        except Exception as e:
-            await ctx.reply(f"⚠️ Error: {e}")
+        full_prompt = f"Gunakan info pencarian web berikut untuk menjawab pertanyaan:\n\nHASIL WEB:\n{web_data}\n\nPERTANYAAN: {query}"
+        jawaban = tanya_openrouter(SYSTEM_PROMPT, full_prompt)
+        await ctx.reply(jawaban[:1900])
 
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
