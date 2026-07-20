@@ -4,7 +4,7 @@ from discord.ext import commands
 import requests
 from duckduckgo_search import DDGS
 
-D# Config
+# Config
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_QURAN")    # Ubah ke DISCORD_TOKEN_QURAN
 HF_TOKEN = os.getenv("HF_TOKEN")
 MODEL_URL = "https://api-inference.huggingface.co/models/cognitivecomputations/dolphin-2.9.2-qwen2-7b"
