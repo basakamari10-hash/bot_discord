@@ -7,7 +7,7 @@ from duckduckgo_search import DDGS
 # Config
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_PERSONA")  # Ubah ke DISCORD_TOKEN_PERSONA
 HF_TOKEN = os.getenv("HF_TOKEN")
-MODEL_URL = "https://router.huggingface.co/hf-inference/models/cognitivecomputations/dolphin-2.9.2-qwen2-7b"
+MODEL_URL = "https://router.huggingface.co/hf-inference/models/AEON-7/Ornith-1.0-35B-AEON-Ultimate-Uncensored-BF16"
 
 headers = {"Authorization": f"Bearer {HF_TOKEN}"}
 
