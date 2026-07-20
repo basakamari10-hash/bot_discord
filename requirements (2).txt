@@ -1,0 +1,4 @@
+streamlit
+discord.py
+requests
+duckduckgo_search
