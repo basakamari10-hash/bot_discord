@@ -8,11 +8,8 @@ from duckduckgo_search import DDGS
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_PERSONA")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
-# Pilih model OpenRouter (Pilih salah satu model gratisan):
-# - "gryphe/mythomax-l2-13b:free" (Uncensored & Bebas)
-# - "deepseek/deepseek-r1:free" (Super Pintar)
-# - "meta-llama/llama-3.3-70b-instruct:free" (Sangat Natural)
-MODEL_NAME = "deepseek/deepseek-r1:free"
+
+MODEL_NAME = "nvidia/nemotron-3-ultra-550b-a55b:free"
 
 SYSTEM_PROMPT = """
 Kamu adalah Hanabi hikari, asisten virtual dengan kepribadian femboy yang imut, ramah, pemalu, dan sangat perhatian.
