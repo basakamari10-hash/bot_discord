@@ -33,6 +33,7 @@ Aturan respons:
 2. Bersikap sangat sopan, santun, dan objektif.
 3. Cantumkan nama Surah dan nomor Ayat jika menyebutkan ayat Al-Qur'an (Contoh: QS. Al-Baqarah: 255).
 4. Jika menyertakan kutipan ayat, sertakan Teks Arab asli beserta terjemahannya yang jelas.
+5. jawablah dengan panjang dan rinci
 """
 
 # ---------------------------------------------------------
