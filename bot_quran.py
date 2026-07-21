@@ -12,25 +12,25 @@ from typing import Optional
 # ---------------------------------------------------------
 # 1. Streamlit Dashboard Setup
 # ---------------------------------------------------------
-st.set_page_config(page_title="Bot Quran Discord", page_icon="📖")
-st.title("📖 Bot Quran & Islamic Assistant 24/7")
-st.success("🟢 Bot Quran Server (Google AI Studio Direct Active)!")
+st.set_page_config(page_title="Bot Quran Discord - Groq Hybrid", page_icon="📖")
+st.title("📖 Bot Quran & Islamic Assistant 24/7 (Groq 120B Engine)")
+st.success("🟢 Bot Quran Server Active!")
 
 # ---------------------------------------------------------
 # 2. Token & API Configuration
 # ---------------------------------------------------------
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_QURAN") or st.secrets.get("DISCORD_TOKEN_QURAN")
-GEMINI_API_KEY = (
-    os.getenv("GEMINI_API_KEY_QURAN") 
-    or st.secrets.get("GEMINI_API_KEY_QURAN") 
-    or os.getenv("GEMINI_API_KEY") 
-    or st.secrets.get("GEMINI_API_KEY")
+GROQ_API_KEY = (
+    os.getenv("GROQ_API_KEY_QURAN") 
+    or st.secrets.get("GROQ_API_KEY_QURAN") 
+    or os.getenv("GROQ_API_KEY") 
+    or st.secrets.get("GROQ_API_KEY")
 )
 
-# Hybrid Model Configuration
-MODEL_CEPAT = "gemini-2.0-flash"                # Kencang untuk chat harian & slash ringan
-MODEL_DALAM = "gemini-2.0-flash-thinking-exp"    # Deep reasoning untuk Fiqh & Tafsir
-MODEL_PRO_ALT = "gemini-1.5-pro"                 # Cadangan analisis mendalam
+# 3-Model Routing Strategy (GPT-OSS 120B, Llama 8B, Llama 70B)
+MODEL_BERAT = "openai/gpt-oss-120b"          # Mode Utama / Berat (Tafsir & Fiqh Detail)
+MODEL_RINGAN = "llama-3.1-8b-instant"       # Mode Ringan (Chat Harian / Fast)
+MODEL_CADANGAN = "llama-3.3-70b-versatile"  # Emergency Fallback
 
 SYSTEM_PROMPT = """
 You are 'Qur'an & Islamic Studies Assistant', an authentic, highly respectful AI specialized in Islamic jurisprudence (Fiqh), Qur'an tafsir, authentic Hadiths, and Duas.
@@ -60,56 +60,45 @@ STRICT RULES & CITATION REQUIREMENTS:
 # 3. Helper & API Functions
 # ---------------------------------------------------------
 def bersihkan_looping(text: str) -> str:
-    """Memotong jika ada kata/frasa yang terulang lebih dari 4 kali berturut-turut."""
     pattern = r'(\b[\w\u0600-\u06FF]+\b)(?:\s+\1){4,}'
-    return re.sub(pattern, r'\1 ... [Teks berulang dipotong otomatis]', text)
+    return re.sub(pattern, r'\1 ... [Teks berulang dipotong]', text)
 
-def tanya_gemini(prompt_text, model_utama=MODEL_CEPAT):
-    """Fungsi Hybrid Google Direct menggunakan Header x-goog-api-key."""
-    daftar_prioritas = [model_utama]
-    
-    for m in [MODEL_CEPAT, MODEL_DALAM, MODEL_PRO_ALT]:
-        if m not in daftar_prioritas:
-            daftar_prioritas.append(m)
+def tanya_groq(prompt_text, model_tujuan=MODEL_RINGAN):
+    """Fungsi Pemanggil Groq dengan Rantai Fallback 3 Model (120B -> 8B -> 70B)."""
+    daftar_model = [model_tujuan]
+    for m in [MODEL_RINGAN, MODEL_CADANGAN]:
+        if m not in daftar_model:
+            daftar_model.append(m)
 
+    url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
-        "Content-Type": "application/json",
-        "x-goog-api-key": GEMINI_API_KEY
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
     }
-    
-    for model_name in daftar_prioritas:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+
+    for model_name in daftar_model:
         payload = {
-            "contents": [{"parts": [{"text": prompt_text}]}],
-            "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
-            "generationConfig": {
-                "temperature": 0.3,
-                "maxOutputTokens": 3000
-            }
+            "model": model_name,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": prompt_text}
+            ],
+            "temperature": 0.3,
+            "max_tokens": 3000
         }
         
         try:
-            res = requests.post(url, headers=headers, json=payload, timeout=25)
+            res = requests.post(url, headers=headers, json=payload, timeout=20)
             if res.status_code == 200:
                 data = res.json()
-                if "candidates" in data and len(data["candidates"]) > 0:
-                    candidate = data["candidates"][0]
-                    
-                    if candidate.get("finishReason") == "SAFETY":
-                        print(f"⚠️ Quran Bot ({model_name}) terkena Safety Filter. Mencoba model cadangan...")
-                        continue
-                    
-                    if "content" in candidate and "parts" in candidate["content"]:
-                        raw_content = candidate["content"]["parts"][0]["text"]
-                        return bersihkan_looping(raw_content)
-                
-                print(f"⚠️ Format respon tidak sesuai dari {model_name}: {data}")
+                raw_content = data['choices'][0]['message']['content']
+                return bersihkan_looping(raw_content)
             else:
-                print(f"⚠️ Quran Bot API Error ({model_name}) [{res.status_code}]: {res.text}")
+                print(f"⚠️ Groq Quran ({model_name}) error [{res.status_code}]: {res.text}, mencoba model selanjutnya...")
         except Exception as e:
-            print(f"⚠️ Exception pada ({model_name}): {e}")
+            print(f"⚠️ Exception Groq ({model_name}): {e}, mencoba model selanjutnya...")
 
-    return "⚠️ Maaf, seluruh server Google Gemini sedang sibuk. Silakan coba beberapa saat lagi."
+    return "⚠️ Maaf, seluruh server Groq AI sedang sibuk. Silakan coba beberapa saat lagi."
 
 def cari_web(query):
     try:
@@ -123,7 +112,6 @@ def cari_web(query):
         return f"Web search failed: {e}"
 
 async def kirim_pesan_panjang(target, text, mode="reply"):
-    """Splits long responses (>1800 chars) into chunked messages."""
     chunks = [text[i:i+1800] for i in range(0, len(text), 1800)]
     for i, chunk in enumerate(chunks):
         if mode == "reply":
@@ -185,7 +173,7 @@ async def on_message(message):
             raw_history.reverse()
             conversation_prompt = "\n".join(raw_history)
             
-            jawaban = await asyncio.to_thread(tanya_gemini, conversation_prompt, model_utama=MODEL_CEPAT)
+            jawaban = await asyncio.to_thread(tanya_groq, conversation_prompt, MODEL_RINGAN)
             await kirim_pesan_panjang(message, jawaban, mode="reply")
 
     await bot.process_commands(message)
@@ -199,152 +187,97 @@ async def slash_help(interaction: discord.Interaction):
     guide_text = (
         "📖 **Qur'an & Islamic Assistant - Guide & Commands**\n\n"
         "**Core Commands:**\n"
-        "• `/hadith [query]` - Search authentic Hadiths with grading & book numbers.\n"
-        "• `/tafsir [verse]` - Get detailed Tafsir with explicit sources (Ibn Kathir, Kemenag, etc.).\n"
-        "• `/dua [topic]` - Look up authentic supplications with Arabic & translation.\n"
-        "• `/dalil [topic]` - Find Quranic & Hadith evidences for a topic.\n"
-        "• `/fiqh [question] [madhhab]` - Ask Fiqh rulings based on specific Madhhabs (Shafi'i, Hanafi, Maliki, Hanbali, Ja'fari, Zaidi, or Comparative).\n"
-        "• `/ask [prompt]` - General questions or quick verse lookup (e.g., `1:1-7`).\n"
+        "• `/hadith [query]` - Search authentic Hadiths.\n"
+        "• `/tafsir [verse]` - Get detailed Tafsir (Uses GPT-OSS 120B Engine).\n"
+        "• `/dua [topic]` - Look up authentic supplications.\n"
+        "• `/dalil [topic]` - Find Quranic & Hadith evidences.\n"
+        "• `/fiqh [question] [madhhab]` - Ask Fiqh rulings (Uses GPT-OSS 120B Engine).\n"
+        "• `/ask [prompt]` - General questions or quick verse lookup.\n"
         "• `/search [query]` - Search references across Islamic web sources.\n"
-        "• `/ping` - Check bot status and latency.\n\n"
-        "⚠️ *All rulings cite authentic sources. Please consult local qualified scholars for personal fatwas.*"
+        "• `/ping` - Check bot status and latency.\n"
     )
     await interaction.response.send_message(guide_text)
 
-@bot.tree.command(name="hadith", description="Search authentic Hadiths (Bukhari, Muslim, etc.) with sources")
-@app_commands.describe(
-    topic="Topic or keywords of the Hadith",
-    book="Optional: Specific collection (e.g., Bukhari, Muslim, Abu Dawud)"
-)
+@bot.tree.command(name="hadith", description="Search authentic Hadiths with sources")
 async def slash_hadith(interaction: discord.Interaction, topic: str, book: Optional[str] = None):
     await interaction.response.defer()
     sender_name = interaction.user.display_name
-    
     prompt = f"[{sender_name}]: Please provide authentic Hadith(s) regarding: '{topic}'."
     if book:
         prompt += f" Specifically search from {book} collection."
-    prompt += " Include Arabic text, translation, collection name, hadith number, and authenticity status (Sahih/Hasan)."
-
-    jawaban = await asyncio.to_thread(tanya_gemini, prompt, model_utama=MODEL_CEPAT)
+        
+    jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_RINGAN)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
-@bot.tree.command(name="tafsir", description="Get detailed Tafsir of a verse with source citations")
-@app_commands.describe(
-    verse="Verse reference (e.g., '2:255', 'Al-Baqarah 255')",
-    source="Optional: Tafsir book (e.g., 'Ibn Kathir', 'Al-Jalalayn', 'Kemenag RI')"
-)
+@bot.tree.command(name="tafsir", description="Get detailed Tafsir of a verse (GPT-OSS 120B Model)")
 async def slash_tafsir(interaction: discord.Interaction, verse: str, source: Optional[str] = None):
     await interaction.response.defer()
     sender_name = interaction.user.display_name
-    
     prompt = f"[{sender_name}]: Provide detailed Tafsir for verse {verse}."
     if source:
         prompt += f" Primary source: Tafsir {source}."
-    prompt += " Mention verse Arabic text, translation, and explanation from verified Tafsir scholars."
 
-    jawaban = await asyncio.to_thread(tanya_gemini, prompt, model_utama=MODEL_DALAM)
+    jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_BERAT)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
-@bot.tree.command(name="dua", description="Search authentic Duas and Adhkar with sources")
-@app_commands.describe(
-    topic="Topic or situation for the Dua (e.g., 'before sleep', 'for forgiveness', 'anxiety')"
-)
+@bot.tree.command(name="dua", description="Search authentic Duas and Adhkar")
 async def slash_dua(interaction: discord.Interaction, topic: str):
     await interaction.response.defer()
     sender_name = interaction.user.display_name
-    
-    prompt = f"[{sender_name}]: Provide authentic Dua(s) for situation: '{topic}'. Include Arabic text, transliteration, translation, and reference source (e.g., Hisnul Muslim / Sahih Bukhari)."
+    prompt = f"[{sender_name}]: Provide authentic Dua(s) for situation: '{topic}'."
 
-    jawaban = await asyncio.to_thread(tanya_gemini, prompt, model_utama=MODEL_CEPAT)
+    jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_RINGAN)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
-@bot.tree.command(name="dalil", description="Find Quranic and Hadith proofs/evidences for a specific issue")
-@app_commands.describe(
-    topic="Topic or issue to search evidence for (e.g., 'patience in adversity', 'honoring parents')"
-)
+@bot.tree.command(name="dalil", description="Find Quranic and Hadith proofs for a topic")
 async def slash_dalil(interaction: discord.Interaction, topic: str):
     await interaction.response.defer()
     sender_name = interaction.user.display_name
-    
-    prompt = f"[{sender_name}]: List primary Quranic verses and authentic Hadith evidences (Dalil) for: '{topic}'. Cite exact Surah/Verse numbers and Hadith sources."
+    prompt = f"[{sender_name}]: List primary Quranic verses and authentic Hadith evidences for: '{topic}'."
 
-    jawaban = await asyncio.to_thread(tanya_gemini, prompt, model_utama=MODEL_DALAM)
+    jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_RINGAN)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
-@bot.tree.command(name="fiqh", description="Ask Fiqh rulings specified by Madhhab or comparative views")
-@app_commands.describe(
-    question="Your Fiqh question",
-    madhhab="Choose Madhhab or Comparative view"
-)
+@bot.tree.command(name="fiqh", description="Ask Fiqh rulings specified by Madhhab (GPT-OSS 120B Model)")
 @app_commands.choices(madhhab=[
-    app_commands.Choice(name="Shafi'i (Madzhab Syafi'i)", value="shafii"),
-    app_commands.Choice(name="Hanafi (Madzhab Hanafi)", value="hanafi"),
-    app_commands.Choice(name="Maliki (Madzhab Maliki)", value="maliki"),
-    app_commands.Choice(name="Hanbali (Madzhab Hanbali)", value="hanbali"),
-    app_commands.Choice(name="Ja'fari / Shia Twelver (Madzhab Ja'fari)", value="jaafari_shia"),
-    app_commands.Choice(name="Zaidi / Shia Zaidiyyah (Madzhab Zaidi)", value="zaidi_shia"),
-    app_commands.Choice(name="Comparative (Semua Madzhab / Perbandingan)", value="comparative_all")
+    app_commands.Choice(name="Shafi'i", value="shafii"),
+    app_commands.Choice(name="Hanafi", value="hanafi"),
+    app_commands.Choice(name="Maliki", value="maliki"),
+    app_commands.Choice(name="Hanbali", value="hanbali"),
+    app_commands.Choice(name="Ja'fari / Shia Twelver", value="jaafari_shia"),
+    app_commands.Choice(name="Zaidi / Shia Zaidiyyah", value="zaidi_shia"),
+    app_commands.Choice(name="Comparative (Perbandingan)", value="comparative_all")
 ])
-async def slash_fiqh(
-    interaction: discord.Interaction, 
-    question: str, 
-    madhhab: Optional[app_commands.Choice[str]] = None
-):
+async def slash_fiqh(interaction: discord.Interaction, question: str, madhhab: Optional[app_commands.Choice[str]] = None):
     await interaction.response.defer()
     sender_name = interaction.user.display_name
-    
     chosen_madhhab = madhhab.value if madhhab else "comparative_all"
-    
-    prompt = (
-        f"[{sender_name}]: Fiqh Question: '{question}'.\n"
-        f"Target Madhhab Perspective: {chosen_madhhab.upper()}.\n"
-        f"Please explain the ruling according to classical scholars of this Madhhab, "
-        f"provide the Dalil (Quran/Hadith proofs), and cite authoritative Fiqh book references."
-    )
+    prompt = f"[{sender_name}]: Fiqh Question: '{question}'. Target Madhhab: {chosen_madhhab.upper()}."
 
-    jawaban = await asyncio.to_thread(tanya_gemini, prompt, model_utama=MODEL_DALAM)
+    jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_BERAT)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
-@bot.tree.command(name="ask", description="Ask general questions or verse references (e.g. '1:1-7')")
-@app_commands.describe(
-    prompt="Enter prompt or verse number",
-    language="Optional: Preferred response language (e.g. 'en', 'id', 'ar')"
-)
-async def slash_ask(interaction: discord.Interaction, prompt: str, language: Optional[str] = None):
+@bot.tree.command(name="ask", description="Ask general questions or verse references")
+async def slash_ask(interaction: discord.Interaction, prompt: str):
     await interaction.response.defer()
     sender_name = interaction.user.display_name
-    
-    final_prompt = f"[{sender_name}]: {prompt}"
-    if language:
-        final_prompt += f"\n\n[Instruction: Reply in language '{language}']"
-        
-    jawaban = await asyncio.to_thread(tanya_gemini, final_prompt, model_utama=MODEL_CEPAT)
+    jawaban = await asyncio.to_thread(tanya_groq, f"[{sender_name}]: {prompt}", MODEL_RINGAN)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
 @bot.tree.command(name="search", description="Search web references for Islamic studies")
-@app_commands.describe(
-    query="Topic or keywords to search",
-    language="Optional: Preferred response language"
-)
-async def slash_search(interaction: discord.Interaction, query: str, language: Optional[str] = None):
+async def slash_search(interaction: discord.Interaction, query: str):
     await interaction.response.defer()
     sender_name = interaction.user.display_name
-    
     web_data = await asyncio.to_thread(cari_web, query)
     full_prompt = f"[{sender_name}]: Use references below to answer:\n\nREFERENCES:\n{web_data}\n\nQUESTION: {query}"
-    if language:
-        full_prompt += f"\n\n[Instruction: Reply in language '{language}']"
         
-    jawaban = await asyncio.to_thread(tanya_gemini, full_prompt, model_utama=MODEL_CEPAT)
+    jawaban = await asyncio.to_thread(tanya_groq, full_prompt, MODEL_RINGAN)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
-@bot.tree.command(name="ping", description="Check bot latency and status")
+@bot.tree.command(name="ping", description="Check bot status")
 async def slash_ping(interaction: discord.Interaction):
     latency = round(bot.latency * 1000)
-    await interaction.response.send_message(f"🏓 **Pong!** Quran & Fiqh Bot latency: `{latency}ms`")
+    await interaction.response.send_message(f"🏓 **Pong!** Quran Bot latency: `{latency}ms` (Groq 120B Engine Active)")
 
-# ---------------------------------------------------------
-# 6. Run Bot
-# ---------------------------------------------------------
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
