@@ -1,4 +1,5 @@
 import os
+import re
 import asyncio
 import discord
 from discord import app_commands
@@ -13,7 +14,7 @@ from typing import Optional
 # ---------------------------------------------------------
 st.set_page_config(page_title="Bot Quran Discord", page_icon="📖")
 st.title("📖 Bot Quran & Islamic Assistant 24/7")
-st.success("🟢 Bot Quran Server (Hadith, Tafsir, Dua, Dalil & Fiqh Active)!")
+st.success("🟢 Bot Quran Server (Anti-Loop & Fast Response Active)!")
 
 # ---------------------------------------------------------
 # 2. Token & API Configuration
@@ -21,7 +22,8 @@ st.success("🟢 Bot Quran Server (Hadith, Tafsir, Dua, Dalil & Fiqh Active)!")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_QURAN") or st.secrets.get("DISCORD_TOKEN_QURAN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY") or st.secrets.get("OPENROUTER_API_KEY")
 
-MODEL_NAME = "nvidia/nemotron-3-ultra-550b-a55b:free"
+# Menggunakan Gemini 2.0 Flash untuk respon kilat & anti-loop
+MODEL_NAME = "google/gemini-2.0-flash-exp:free"
 
 SYSTEM_PROMPT = """
 You are 'Qur'an & Islamic Studies Assistant', an authentic, highly respectful AI specialized in Islamic jurisprudence (Fiqh), Qur'an tafsir, authentic Hadiths, and Duas.
@@ -40,16 +42,20 @@ STRICT RULES & CITATION REQUIREMENTS:
    - For Qur'an/Hadith/Dua: Always provide **Arabic Text** + **Translation** + **Authentic Source Citation**.
    - For Fiqh: Provide **Summary Ruling** + **Dalil (Proofs)** + **Madhhab Perspective/Details** + **Sources**.
 
-4. DISCLAIMER:
+4. NO REPETITION RULE:
+   - Never repeat the same Arabic or Latin words continuously. Keep citations concise and clear.
+
+5. DISCLAIMER:
    - Always include a short reminder at the end that complex Islamic rulings should be double-checked with qualified scholars.
 """
 
 # ---------------------------------------------------------
-# 3. Discord Bot Initialization
+# 3. Helper Functions
 # ---------------------------------------------------------
-intents = discord.Intents.default()
-intents.message_content = True
-bot = commands.Bot(command_prefix="!", intents=intents)
+def bersihkan_looping(text: str) -> str:
+    """Memotong jika ada kata/frasa yang terulang lebih dari 4 kali berturut-turut."""
+    pattern = r'(\b[\w\u0600-\u06FF]+\b)(?:\s+\1){4,}'
+    return re.sub(pattern, r'\1 ... [Teks berulang dipotong otomatis]', text)
 
 def tanya_openrouter(messages_list):
     url = "https://openrouter.ai/api/v1/chat/completions"
@@ -61,14 +67,17 @@ def tanya_openrouter(messages_list):
         "model": MODEL_NAME,
         "messages": messages_list,
         "temperature": 0.3,
-        "max_tokens": 4500
+        "max_tokens": 3000,
+        "frequency_penalty": 0.5,  # Mencegah pengulangan kata
+        "presence_penalty": 0.3     # Mendorong variasi topik
     }
     
     try:
         res = requests.post(url, headers=headers, json=payload, timeout=30)
         if res.status_code == 200:
             data = res.json()
-            return data['choices'][0]['message']['content']
+            raw_content = data['choices'][0]['message']['content']
+            return bersihkan_looping(raw_content)
         else:
             return f"⚠️ OpenRouter Error ({res.status_code}): {res.text}"
     except Exception as e:
@@ -98,8 +107,12 @@ async def kirim_pesan_panjang(target, text, mode="reply"):
             await target.followup.send(chunk)
 
 # ---------------------------------------------------------
-# 4. Events & Auto-Reply Listener
+# 4. Discord Bot Initialization & Events
 # ---------------------------------------------------------
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix="!", intents=intents)
+
 @bot.event
 async def on_ready():
     try:
@@ -152,7 +165,7 @@ async def on_message(message):
     await bot.process_commands(message)
 
 # ---------------------------------------------------------
-# 5. Slash Commands (`/help`, `/hadith`, `/tafsir`, `/dua`, `/dalil`, `/fiqh`, `/ask`, `/search`, `/ping`)
+# 5. Slash Commands
 # ---------------------------------------------------------
 
 @bot.tree.command(name="help", description="Guide and commands for Quran, Hadith, Tafsir, Dua & Fiqh")
