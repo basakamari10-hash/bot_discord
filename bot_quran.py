@@ -14,7 +14,7 @@ from typing import Optional
 # ---------------------------------------------------------
 st.set_page_config(page_title="Bot Quran Discord", page_icon="📖")
 st.title("📖 Bot Quran & Islamic Assistant 24/7")
-st.success("🟢 Bot Quran Server (Anti-Loop & Fast Response Active)!")
+st.success("🟢 Bot Quran Server (Smart Hybrid Model Active)!")
 
 # ---------------------------------------------------------
 # 2. Token & API Configuration
@@ -22,8 +22,10 @@ st.success("🟢 Bot Quran Server (Anti-Loop & Fast Response Active)!")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_QURAN") or st.secrets.get("DISCORD_TOKEN_QURAN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY") or st.secrets.get("OPENROUTER_API_KEY")
 
-# Menggunakan Gemini 2.0 Flash untuk respon kilat & anti-loop
-MODEL_NAME = "google/gemini-2.0-flash-exp:free"
+# Hybrid Model Configuration
+MODEL_CEPAT = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
+MODEL_DALAM = "nvidia/nemotron-3-ultra-550b-a55b:free"
+MODEL_CADANGAN_UMUM = "nvidia/nemotron-3-super-120b-a12b:free"
 
 SYSTEM_PROMPT = """
 You are 'Qur'an & Islamic Studies Assistant', an authentic, highly respectful AI specialized in Islamic jurisprudence (Fiqh), Qur'an tafsir, authentic Hadiths, and Duas.
@@ -50,38 +52,49 @@ STRICT RULES & CITATION REQUIREMENTS:
 """
 
 # ---------------------------------------------------------
-# 3. Helper Functions
+# 3. Helper & API Functions
 # ---------------------------------------------------------
 def bersihkan_looping(text: str) -> str:
     """Memotong jika ada kata/frasa yang terulang lebih dari 4 kali berturut-turut."""
     pattern = r'(\b[\w\u0600-\u06FF]+\b)(?:\s+\1){4,}'
     return re.sub(pattern, r'\1 ... [Teks berulang dipotong otomatis]', text)
 
-def tanya_openrouter(messages_list):
+def tanya_openrouter(messages_list, model_utama=MODEL_CEPAT):
+    """Sistem Hybrid dengan Rantai Prioritas & Automatic Fallback."""
+    daftar_prioritas = [model_utama]
+    
+    # Tambahkan model cadangan jika belum ada di list
+    for fallback in [MODEL_CEPAT, MODEL_CADANGAN_UMUM]:
+        if fallback not in daftar_prioritas:
+            daftar_prioritas.append(fallback)
+
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json"
     }
-    payload = {
-        "model": MODEL_NAME,
-        "messages": messages_list,
-        "temperature": 0.3,
-        "max_tokens": 3000,
-        "frequency_penalty": 0.5,  # Mencegah pengulangan kata
-        "presence_penalty": 0.3     # Mendorong variasi topik
-    }
     
-    try:
-        res = requests.post(url, headers=headers, json=payload, timeout=30)
-        if res.status_code == 200:
-            data = res.json()
-            raw_content = data['choices'][0]['message']['content']
-            return bersihkan_looping(raw_content)
-        else:
-            return f"⚠️ OpenRouter Error ({res.status_code}): {res.text}"
-    except Exception as e:
-        return f"⚠️ Connection Error: {e}"
+    for model in daftar_prioritas:
+        payload = {
+            "model": model,
+            "messages": messages_list,
+            "temperature": 0.3,
+            "max_tokens": 3000,
+            "frequency_penalty": 0.5,
+            "presence_penalty": 0.3
+        }
+        try:
+            res = requests.post(url, headers=headers, json=payload, timeout=25)
+            if res.status_code == 200:
+                data = res.json()
+                raw_content = data['choices'][0]['message']['content']
+                return bersihkan_looping(raw_content)
+            else:
+                print(f"⚠️ Model {model} gagal (HTTP {res.status_code}), mencoba model cadangan...")
+        except Exception as e:
+            print(f"⚠️ Koneksi ke {model} error ({e}), mencoba model cadangan...")
+            
+    return "⚠️ Maaf, seluruh server model AI sedang sibuk. Silakan coba beberapa saat lagi."
 
 def cari_web(query):
     try:
@@ -159,7 +172,8 @@ async def on_message(message):
             raw_history.reverse()
             messages_payload.extend(raw_history)
             
-            jawaban = await asyncio.to_thread(tanya_openrouter, messages_payload)
+            # Chat biasa menggunakan MODEL_CEPAT
+            jawaban = await asyncio.to_thread(tanya_openrouter, messages_payload, model_utama=MODEL_CEPAT)
             await kirim_pesan_panjang(message, jawaban, mode="reply")
 
     await bot.process_commands(message)
@@ -204,7 +218,7 @@ async def slash_hadith(interaction: discord.Interaction, topic: str, book: Optio
         {"role": "user", "content": prompt}
     ]
     
-    jawaban = await asyncio.to_thread(tanya_openrouter, messages_payload)
+    jawaban = await asyncio.to_thread(tanya_openrouter, messages_payload, model_utama=MODEL_CEPAT)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
 @bot.tree.command(name="tafsir", description="Get detailed Tafsir of a verse with source citations")
@@ -226,7 +240,8 @@ async def slash_tafsir(interaction: discord.Interaction, verse: str, source: Opt
         {"role": "user", "content": prompt}
     ]
     
-    jawaban = await asyncio.to_thread(tanya_openrouter, messages_payload)
+    # Tafsir menggunakan MODEL_DALAM (Nemotron 550B)
+    jawaban = await asyncio.to_thread(tanya_openrouter, messages_payload, model_utama=MODEL_DALAM)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
 @bot.tree.command(name="dua", description="Search authentic Duas and Adhkar with sources")
@@ -244,7 +259,7 @@ async def slash_dua(interaction: discord.Interaction, topic: str):
         {"role": "user", "content": prompt}
     ]
     
-    jawaban = await asyncio.to_thread(tanya_openrouter, messages_payload)
+    jawaban = await asyncio.to_thread(tanya_openrouter, messages_payload, model_utama=MODEL_CEPAT)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
 @bot.tree.command(name="dalil", description="Find Quranic and Hadith proofs/evidences for a specific issue")
@@ -262,7 +277,8 @@ async def slash_dalil(interaction: discord.Interaction, topic: str):
         {"role": "user", "content": prompt}
     ]
     
-    jawaban = await asyncio.to_thread(tanya_openrouter, messages_payload)
+    # Dalil menggunakan MODEL_DALAM (Nemotron 550B)
+    jawaban = await asyncio.to_thread(tanya_openrouter, messages_payload, model_utama=MODEL_DALAM)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
 @bot.tree.command(name="fiqh", description="Ask Fiqh rulings specified by Madhhab or comparative views")
@@ -301,7 +317,8 @@ async def slash_fiqh(
         {"role": "user", "content": prompt}
     ]
     
-    jawaban = await asyncio.to_thread(tanya_openrouter, messages_payload)
+    # Fiqh menggunakan MODEL_DALAM (Nemotron 550B)
+    jawaban = await asyncio.to_thread(tanya_openrouter, messages_payload, model_utama=MODEL_DALAM)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
 @bot.tree.command(name="ask", description="Ask general questions or verse references (e.g. '1:1-7')")
@@ -322,7 +339,7 @@ async def slash_ask(interaction: discord.Interaction, prompt: str, language: Opt
         {"role": "user", "content": final_prompt}
     ]
         
-    jawaban = await asyncio.to_thread(tanya_openrouter, messages_payload)
+    jawaban = await asyncio.to_thread(tanya_openrouter, messages_payload, model_utama=MODEL_CEPAT)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
 @bot.tree.command(name="search", description="Search web references for Islamic studies")
@@ -344,7 +361,7 @@ async def slash_search(interaction: discord.Interaction, query: str, language: O
         {"role": "user", "content": full_prompt}
     ]
         
-    jawaban = await asyncio.to_thread(tanya_openrouter, messages_payload)
+    jawaban = await asyncio.to_thread(tanya_openrouter, messages_payload, model_utama=MODEL_CEPAT)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
 @bot.tree.command(name="ping", description="Check bot latency and status")
