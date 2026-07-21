@@ -6,7 +6,7 @@ import os
 st.set_page_config(page_title="Discord Bot Hub 24/7", page_icon="🤖")
 
 st.title("🤖 Discord Multi-Bot Host 24/7")
-st.write("Aplikasi ini menjalankan Bot Persona dan Bot Quran secara bersamaan.")
+st.write("Aplikasi ini menjalankan Bot Persona (Shion) dan Bot Quran secara bersamaan.")
 
 # 1. Salin Secrets Streamlit ke Environment Variables sistem
 try:
@@ -15,11 +15,10 @@ try:
 except Exception as e:
     st.warning(f"Peringatan Secrets: {e}")
 
-# 2. @st.cache_resource MEMASTIKAN bot HANYA di-spawn 1 KALI saja secara GLOBAL
-#    (Mencegah bot membalas double / spam di Discord saat web di-refresh)
+# 2. Spawn Subprocess 1 Kali Secara Global
 @st.cache_resource
 def start_bots():
-    print("🚀 Memulai subprocess Bot Persona...")
+    print("🚀 Memulai subprocess Bot Persona (Shion)...")
     p1 = subprocess.Popen([sys.executable, "bot_persona.py"])
     
     print("🚀 Memulai subprocess Bot Quran...")
@@ -30,5 +29,21 @@ def start_bots():
 # Jalankan proses pemicu bot
 bot_persona_proc, bot_quran_proc = start_bots()
 
-st.success("✅ Both Bot Persona & Bot Quran are Online!")
-st.info("🟢 Server Status: Active & Listening to Discord Events")
+# 3. Pengecekan Status Real-Time di Dashboard Streamlit
+st.subheader("📊 Status Proses Subprocess:")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    if bot_persona_proc.poll() is None:
+        st.success("🟢 **Bot Persona (Shion)**: Running (PID: {})".format(bot_persona_proc.pid))
+    else:
+        st.error(f"🔴 **Bot Persona**: Stopped (Exit Code: {bot_persona_proc.poll()})")
+
+with col2:
+    if bot_quran_proc.poll() is None:
+        st.success("🟢 **Bot Quran**: Running (PID: {})".format(bot_quran_proc.pid))
+    else:
+        st.error(f"🔴 **Bot Quran**: Stopped (Exit Code: {bot_quran_proc.poll()})")
+
+st.info("💡 **Tips:** Jika salah satu bot mati, kamu cukup tekan tombol **Rerun / Reboot App** di Streamlit Cloud.")
