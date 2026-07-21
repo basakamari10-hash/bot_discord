@@ -20,11 +20,17 @@ st.success("🟢 Bot Quran Server (Smart Hybrid Google Direct Active)!")
 # 2. Token & API Configuration
 # ---------------------------------------------------------
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_QURAN") or st.secrets.get("DISCORD_TOKEN_QURAN")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY")
+GEMINI_API_KEY = (
+    os.getenv("GEMINI_API_KEY_QURAN") 
+    or st.secrets.get("GEMINI_API_KEY_QURAN") 
+    or os.getenv("GEMINI_API_KEY") 
+    or st.secrets.get("GEMINI_API_KEY")
+)
 
-# Hybrid Google Model Configuration
-MODEL_CEPAT = "gemini-2.0-flash"
-MODEL_DALAM = "gemini-1.5-pro"
+# Hybrid Model Configuration
+MODEL_CEPAT = "gemini-2.0-flash"                # Kencang untuk chat harian & slash ringan
+MODEL_DALAM = "gemini-2.0-flash-thinking-exp"    # Deep reasoning untuk Fiqh & Tafsir
+MODEL_PRO_ALT = "gemini-1.5-pro"                 # Cadangan analisis mendalam
 
 SYSTEM_PROMPT = """
 You are 'Qur'an & Islamic Studies Assistant', an authentic, highly respectful AI specialized in Islamic jurisprudence (Fiqh), Qur'an tafsir, authentic Hadiths, and Duas.
@@ -59,17 +65,16 @@ def bersihkan_looping(text: str) -> str:
     return re.sub(pattern, r'\1 ... [Teks berulang dipotong otomatis]', text)
 
 def tanya_gemini(prompt_text, model_utama=MODEL_CEPAT):
-    """Fungsi Hybrid Google Direct dengan Automatic Fallback."""
+    """Fungsi Hybrid Google Direct dengan Rantai Fallback 3 lapis."""
     daftar_prioritas = [model_utama]
     
-    # Masukkan model fallback jika belum ada
-    for m in [MODEL_CEPAT, MODEL_DALAM]:
+    # Rantai prioritas pencarian model cadangan
+    for m in [MODEL_CEPAT, MODEL_DALAM, MODEL_PRO_ALT]:
         if m not in daftar_prioritas:
             daftar_prioritas.append(m)
 
     headers = {"Content-Type": "application/json"}
     
-    # Coba satu per satu sesuai urutan prioritas
     for model_name in daftar_prioritas:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
         payload = {
@@ -226,7 +231,7 @@ async def slash_tafsir(interaction: discord.Interaction, verse: str, source: Opt
         prompt += f" Primary source: Tafsir {source}."
     prompt += " Mention verse Arabic text, translation, and explanation from verified Tafsir scholars."
 
-    # Tafsir mengutamakan MODEL_DALAM (gemini-1.5-pro)
+    # Tafsir mengutamakan MODEL_DALAM (gemini-2.0-flash-thinking-exp)
     jawaban = await asyncio.to_thread(tanya_gemini, prompt, model_utama=MODEL_DALAM)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
@@ -253,7 +258,7 @@ async def slash_dalil(interaction: discord.Interaction, topic: str):
     
     prompt = f"[{sender_name}]: List primary Quranic verses and authentic Hadith evidences (Dalil) for: '{topic}'. Cite exact Surah/Verse numbers and Hadith sources."
 
-    # Dalil mengutamakan MODEL_DALAM (gemini-1.5-pro)
+    # Dalil mengutamakan MODEL_DALAM (gemini-2.0-flash-thinking-exp)
     jawaban = await asyncio.to_thread(tanya_gemini, prompt, model_utama=MODEL_DALAM)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
@@ -288,7 +293,7 @@ async def slash_fiqh(
         f"provide the Dalil (Quran/Hadith proofs), and cite authoritative Fiqh book references."
     )
 
-    # Fiqh mengutamakan MODEL_DALAM (gemini-1.5-pro)
+    # Fiqh mengutamakan MODEL_DALAM (gemini-2.0-flash-thinking-exp)
     jawaban = await asyncio.to_thread(tanya_gemini, prompt, model_utama=MODEL_DALAM)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
