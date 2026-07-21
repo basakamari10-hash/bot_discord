@@ -13,7 +13,7 @@ from typing import Optional
 # ---------------------------------------------------------
 st.set_page_config(page_title="Bot Quran Discord", page_icon="📖")
 st.title("📖 Bot Quran Discord Assistant 24/7")
-st.success("🟢 Bot Quran Server (English Commands & Memory) is Active!")
+st.success("🟢 Bot Quran Server (Memory & Split-Message Active)!")
 
 # ---------------------------------------------------------
 # 2. Token & API Configuration
@@ -24,16 +24,25 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY") or st.secrets.get("OPENROUT
 MODEL_NAME = "nvidia/nemotron-3-ultra-550b-a55b:free"
 
 SYSTEM_PROMPT = """
-You are 'Qur'an Assistant', a trusted AI bot about the Holy Qur'an, tafsir, and verses.
-Rules for response:
-1. SENDER & CHAT CONTEXT:
-   - Messages from users will start with their display name in square brackets, e.g., [Budi]: Hello.
-   - Address users naturally if relevant and understand the flow from conversation history.
-2. MULTI-LANGUAGE:
-   - Automatically detect the user's language (Indonesian, English, Arabic, Sundanese, Javanese, etc.).
-   - ALWAYS reply in the SAME language used by the user, unless requested otherwise.
-3. Be respectful, polite, and objective.
-4. Mention Surah name and Verse number when quoting the Qur'an (e.g., QS. Al-Baqarah: 255).
+You are 'Qur'an Assistant', a trusted AI bot dedicated to providing accurate information about the Holy Qur'an, verses, translations, and tafsir.
+
+STRICT RESPONSE & FORMATTING RULES:
+1. SHORTCUT INPUTS (e.g., "1:1-7", "2:255", "QS Al-Baqarah: 255"):
+   - When a user inputs a verse reference format like "1:1-7", automatically recognize it as a verse lookup for Surah 1, verses 1 to 7.
+
+2. VERSE DISPLAY FORMAT:
+   When quoting or presenting Qur'an verses, ALWAYS follow this structure:
+   - **Original Arabic Text** (Teks Arab Asli)
+   - **Translation** (Terjemahan yang jelas)
+   - **Translation Source/Citation** (Indicate source, e.g., "Source: Sahih International" or "Sumber: Kemenag RI / Tafsir Al-Mukhtashar")
+
+3. MULTI-LANGUAGE & AUTO-DETECTION:
+   - Automatically detect user language or honor requested language codes (e.g., 'en', 'id', 'ar').
+   - Reply in the exact language used by the user.
+
+4. MANDATORY DISCLAIMER:
+   - At the VERY END of EVERY response, ALWAYS append this exact line (translated to the user's language):
+     "\n\n---\n⚠️ *Note: As with all AI models, inaccuracies may occur. Please verify important theological details with qualified Islamic scholars or verified tafsir sources.*"
 """
 
 # ---------------------------------------------------------
@@ -53,7 +62,7 @@ def tanya_openrouter(messages_list):
         "model": MODEL_NAME,
         "messages": messages_list,
         "temperature": 0.3,
-        "max_tokens": 1200
+        "max_tokens": 3000  # Dineikkan agar AI tidak berhenti di tengah jalan
     }
     
     try:
@@ -77,8 +86,20 @@ def cari_web(query):
     except Exception as e:
         return f"Web search failed: {e}"
 
+async def kirim_pesan_panjang(target, text, mode="reply"):
+    """Memecah teks panjang (>1800 karakter) menjadi beberapa balasan berurutan tanpa terpotong."""
+    chunks = [text[i:i+1800] for i in range(0, len(text), 1800)]
+    for i, chunk in enumerate(chunks):
+        if mode == "reply":
+            if i == 0:
+                await target.reply(chunk)
+            else:
+                await target.channel.send(chunk)
+        elif mode == "slash":
+            await target.followup.send(chunk)
+
 # ---------------------------------------------------------
-# 4. Events & Auto-Reply Memory Listener
+# 4. Events & Auto-Reply Listener
 # ---------------------------------------------------------
 @bot.event
 async def on_ready():
@@ -88,7 +109,7 @@ async def on_ready():
     except Exception as e:
         print(f"❌ Failed to sync slash commands: {e}")
         
-    await bot.change_presence(activity=discord.Game(name="/ask | /search | /ping"))
+    await bot.change_presence(activity=discord.Game(name="/help | /ask | /search"))
     print(f"✅ Bot Quran ({bot.user}) is Online!")
 
 @bot.event
@@ -127,22 +148,40 @@ async def on_message(message):
             messages_payload.extend(raw_history)
             
             jawaban = await asyncio.to_thread(tanya_openrouter, messages_payload)
-            await message.reply(jawaban[:1900])
+            await kirim_pesan_panjang(message, jawaban, mode="reply")
 
     await bot.process_commands(message)
 
 # ---------------------------------------------------------
-# 5. English Slash Commands (`/ping`, `/ask`, `/search`)
+# 5. English Slash Commands (`/help`, `/ping`, `/ask`, `/search`)
 # ---------------------------------------------------------
-@bot.tree.command(name="ping", description="Check bot status and latency")
+@bot.tree.command(name="help", description="Show usage guide and format examples for Quran Assistant")
+async def slash_help(interaction: discord.Interaction):
+    guide_text = (
+        "📖 **Qur'an Assistant - User Guide & Commands**\n\n"
+        "**1. Quick Verse Lookup:**\n"
+        "• Type verse references directly in `/ask`, e.g., `1:1-7` or `2:255` or `Surah Al-Baqarah 255`.\n"
+        "• Output format: **Original Arabic** + **Translation** + **Source Citation**.\n\n"
+        "**2. Commands List:**\n"
+        "• `/ask [prompt]` - Ask questions about tafsir, verses, or Islamic topics.\n"
+        "• `/search [query]` - Search web references for tafsir and articles.\n"
+        "• `/ping` - Check bot status and response latency.\n"
+        "• `/help` - Show this usage guide.\n\n"
+        "**3. Language Options:**\n"
+        "• Automatically detects your language, or specify a language code like `en`, `id`, `ar` in command options.\n\n"
+        "⚠️ *Disclaimer: Responses are generated by AI and may contain inaccuracies. Please consult authentic scholars or tafsir books for critical study.*"
+    )
+    await interaction.response.send_message(guide_text)
+
+@bot.tree.command(name="ping", description="Check bot latency and status")
 async def slash_ping(interaction: discord.Interaction):
     latency = round(bot.latency * 1000)
     await interaction.response.send_message(f"🏓 **Pong!** Quran Bot latency: `{latency}ms`")
 
-@bot.tree.command(name="ask", description="Ask anything about the Qur'an, tafsir, or translations")
+@bot.tree.command(name="ask", description="Ask about the Qur'an or look up verses (e.g., '1:1-7')")
 @app_commands.describe(
-    prompt="Enter your question",
-    language="Optional: Specify response language (e.g., English, Indonesian, Arabic)"
+    prompt="Enter your question or verse reference (e.g., '1:1-7', 'Tafsir of 2:255')",
+    language="Optional: Preferred response language (e.g., 'en', 'id', 'ar')"
 )
 async def slash_ask(interaction: discord.Interaction, prompt: str, language: Optional[str] = None):
     await interaction.response.defer()
@@ -151,7 +190,7 @@ async def slash_ask(interaction: discord.Interaction, prompt: str, language: Opt
     final_prompt = f"[{sender_name}]: {prompt}"
     
     if language:
-        final_prompt += f"\n\n[Instruction: Provide the entire response in {language}]"
+        final_prompt += f"\n\n[Instruction: Reply in language '{language}']"
         
     messages_payload = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -159,12 +198,12 @@ async def slash_ask(interaction: discord.Interaction, prompt: str, language: Opt
     ]
         
     jawaban = await asyncio.to_thread(tanya_openrouter, messages_payload)
-    await interaction.followup.send(jawaban[:1900])
+    await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
 @bot.tree.command(name="search", description="Search web references for Qur'an verses or topics")
 @app_commands.describe(
     query="Topic or verse to search for",
-    language="Optional: Specify response language (e.g., English, Indonesian, Arabic)"
+    language="Optional: Preferred response language (e.g., 'en', 'id', 'ar')"
 )
 async def slash_search(interaction: discord.Interaction, query: str, language: Optional[str] = None):
     await interaction.response.defer()
@@ -172,9 +211,9 @@ async def slash_search(interaction: discord.Interaction, query: str, language: O
     sender_name = interaction.user.display_name
     web_data = await asyncio.to_thread(cari_web, query)
     
-    full_prompt = f"[{sender_name}]: Use the following search references to answer the theological/verse question:\n\nREFERENCES:\n{web_data}\n\nQUESTION: {query}"
+    full_prompt = f"[{sender_name}]: Use the following search references to answer:\n\nREFERENCES:\n{web_data}\n\nQUESTION: {query}"
     if language:
-        full_prompt += f"\n\n[Instruction: Provide the entire response in {language}]"
+        full_prompt += f"\n\n[Instruction: Reply in language '{language}']"
         
     messages_payload = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -182,7 +221,7 @@ async def slash_search(interaction: discord.Interaction, query: str, language: O
     ]
         
     jawaban = await asyncio.to_thread(tanya_openrouter, messages_payload)
-    await interaction.followup.send(jawaban[:1900])
+    await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
 # ---------------------------------------------------------
 # 6. Run Bot
