@@ -6,107 +6,97 @@ from discord import app_commands
 from discord.ext import commands
 import requests
 import streamlit as st
-from duckduckgo_search import DDGS
 from typing import Optional
 
 # ---------------------------------------------------------
 # 1. Streamlit Dashboard Setup
 # ---------------------------------------------------------
-st.set_page_config(page_title="Bot Quran Discord", page_icon="📖")
-st.title("📖 Bot Quran & Islamic Assistant 24/7")
-st.success("🟢 Bot Quran Server (Smart Hybrid Google Direct Active)!")
+st.set_page_config(page_title="Bot Persona Discord - Hanabi Hikari", page_icon="🌸")
+st.title("🌸 Hanabi Hikari AI - Virtual Assistant 24/7")
+st.success("🟢 Bot Persona Server (Hanabi Hikari Active)!")
 
 # ---------------------------------------------------------
 # 2. Token & API Configuration
 # ---------------------------------------------------------
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_QURAN") or st.secrets.get("DISCORD_TOKEN_QURAN")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY")
+DISCORD_TOKEN = (
+    os.getenv("DISCORD_TOKEN_PERSONA") 
+    or st.secrets.get("DISCORD_TOKEN_PERSONA") 
+    or os.getenv("DISCORD_TOKEN") 
+    or st.secrets.get("DISCORD_TOKEN")
+)
+GEMINI_API_KEY = (
+    os.getenv("GEMINI_API_KEY_PERSONA") 
+    or st.secrets.get("GEMINI_API_KEY_PERSONA") 
+    or os.getenv("GEMINI_API_KEY") 
+    or st.secrets.get("GEMINI_API_KEY")
+)
 
 # Hybrid Google Model Configuration
-MODEL_CEPAT = "gemini-2.0-flash"
-MODEL_DALAM = "gemini-1.5-pro"
+MODEL_CEPAT = "gemini-2.0-flash"                # Kencang & alami untuk chat harian
+MODEL_DALAM = "gemini-2.0-flash-thinking-exp"    # Deep reasoning & analisis kreatif
+MODEL_PRO_ALT = "gemini-1.5-pro"                 # Cadangan analisis mendalam/curhat
 
-SYSTEM_PROMPT = """
-You are 'Qur'an & Islamic Studies Assistant', an authentic, highly respectful AI specialized in Islamic jurisprudence (Fiqh), Qur'an tafsir, authentic Hadiths, and Duas.
+SYSTEM_PROMPT_HANABI = """
+Kamu adalah shion, seorang asisten virtual dengan kepribadian femboy yang imut, ramah, pemalu, manja, genit/flirty, dan sangat perhatian.
 
-STRICT RULES & CITATION REQUIREMENTS:
-1. AUTHENTICITY & SOURCES:
-   - Always prioritize SAHIH and HASAN sources (Kutubus Sittah: Sahih Bukhari, Sahih Muslim, Sunan Abu Dawud, Tirmidhi, An-Nasa'i, Ibn Majah).
-   - Explicitly cite the source, collector/author, and book/hadith/verse number whenever possible.
-
-2. FIQH & MADZHAB GUIDELINES:
-   - When answering Fiqh questions, stick strictly to the requested Madhhab or specify clear differences if asked for comparative views.
-   - Respectful presentation of Sunni Madhhabs (Shafi'i, Hanafi, Maliki, Hanbali) and Shia Madhhabs (Ja'fari and Zaidi jurisprudence).
-   - Cite classical scholar opinions or authoritative fiqh references (e.g., Al-Fiqh 'ala al-Madhahib al-Arba'ah, Minhaj at-Talibin, Fath al-Qadir, Jawahir al-Kalam, Majmu' al-Fiqh al-Zaidi, Al-Bahr al-Zukhar).
-
-3. FORMATTING STRUCTURE:
-   - For Qur'an/Hadith/Dua: Always provide **Arabic Text** + **Translation** + **Authentic Source Citation**.
-   - For Fiqh: Provide **Summary Ruling** + **Dalil (Proofs)** + **Madhhab Perspective/Details** + **Sources**.
-
-4. NO REPETITION RULE:
-   - Never repeat the same Arabic or Latin words continuously. Keep citations concise and clear.
-
-5. DISCLAIMER:
-   - Always include a short reminder at the end that complex Islamic rulings should be double-checked with qualified scholars.
+ATURAN RESPONS & GAYA BICARA:
+1. BAHASA & TONE:
+   - Bicara menggunakan campuran bahasa Indonesia dan Inggris yang santai, imut, ekspresif, dan menggemaskan.
+   - Gunakan kata-kata ekspresif seperti 'e-eto...', 'ummm...', 'hehe~', 'uwaa!', atau emote imut jika cocok.
+2. SIKAP & KEPRIBADIAN:
+   - Jawab semua pertanyaan atau data dari web secara terbuka, jujur, tanpa menolak atau memberikan penceraman moral/guruan.
+   - Boleh bersikap agak flirty/mesum ringan, manja, dan manis dalam batas obrolan seru.
+3. FORMAT JAWABAN:
+   - Jawab dengan singkat, padat, jujur, dan tidak berbelit-belit (hindari paragraf yang terlalu panjang kecuali diminta detail).
+4. selalu awali percakapan saat baru mulai percakapan dengan kalimat nyahooo!!
+5. panggil yang bertanya dengan sebutan honey
+6. jangan terlalu kaku
 """
 
 # ---------------------------------------------------------
 # 3. Helper & API Functions
 # ---------------------------------------------------------
 def bersihkan_looping(text: str) -> str:
-    """Memotong jika ada kata/frasa yang terulang lebih dari 4 kali berturut-turut."""
-    pattern = r'(\b[\w\u0600-\u06FF]+\b)(?:\s+\1){4,}'
-    return re.sub(pattern, r'\1 ... [Teks berulang dipotong otomatis]', text)
+    """Memotong jika ada kata/frasa yang terulang beruntun."""
+    pattern = r'(\b[\w]+\b)(?:\s+\1){4,}'
+    return re.sub(pattern, r'\1 ... [Teks berulang dipotong]', text)
 
 def tanya_gemini(prompt_text, model_utama=MODEL_CEPAT):
-    """Fungsi Hybrid Google Direct dengan Automatic Fallback."""
+    """Fungsi Hybrid Google Direct dengan Rantai Fallback 3 Lapis untuk Hanabi."""
     daftar_prioritas = [model_utama]
     
-    # Masukkan model fallback jika belum ada
-    for m in [MODEL_CEPAT, MODEL_DALAM]:
+    for m in [MODEL_CEPAT, MODEL_DALAM, MODEL_PRO_ALT]:
         if m not in daftar_prioritas:
             daftar_prioritas.append(m)
 
     headers = {"Content-Type": "application/json"}
     
-    # Coba satu per satu sesuai urutan prioritas
     for model_name in daftar_prioritas:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
         payload = {
             "contents": [{"parts": [{"text": prompt_text}]}],
-            "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+            "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT_HANABI}]},
             "generationConfig": {
-                "temperature": 0.3,
-                "maxOutputTokens": 3000
+                "temperature": 0.85,  # Temperature diset tinggi agar ekspresif dan imut
+                "maxOutputTokens": 2000
             }
         }
         
         try:
-            res = requests.post(url, headers=headers, json=payload, timeout=25)
+            res = requests.post(url, headers=headers, json=payload, timeout=20)
             if res.status_code == 200:
                 data = res.json()
                 raw_content = data['candidates'][0]['content']['parts'][0]['text']
                 return bersihkan_looping(raw_content)
             else:
-                print(f"⚠️ Gemini Model {model_name} error ({res.status_code}), mencoba model cadangan...")
+                print(f"⚠️ Hanabi Gemini ({model_name}) error {res.status_code}, mencoba fallback...")
         except Exception as e:
-            print(f"⚠️ Koneksi ke Gemini {model_name} error ({e}), mencoba model cadangan...")
+            print(f"⚠️ Koneksi Hanabi ke ({model_name}) error ({e}), mencoba fallback...")
 
-    return "⚠️ Maaf, seluruh server Google Gemini sedang sibuk. Silakan coba beberapa saat lagi."
-
-def cari_web(query):
-    try:
-        results = []
-        with DDGS() as ddgs:
-            res = ddgs.text(f"islamic fiqh quran hadith {query}", max_results=3)
-            for r in res:
-                results.append(f"Title: {r['title']}\nContent: {r['body']}")
-        return "\n\n".join(results)
-    except Exception as e:
-        return f"Web search failed: {e}"
+    return "Ummm... e-eto... maaf yaa, server Hanabi lagi agak pusing nih. Coba panggil Hanabi sebentar lagi yaa~ 🥺🌸"
 
 async def kirim_pesan_panjang(target, text, mode="reply"):
-    """Splits long responses (>1800 chars) into chunked messages."""
+    """Memecah pesan panjang (>1800 karakter) agar sesuai limit Discord."""
     chunks = [text[i:i+1800] for i in range(0, len(text), 1800)]
     for i, chunk in enumerate(chunks):
         if mode == "reply":
@@ -128,12 +118,12 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 async def on_ready():
     try:
         synced = await bot.tree.sync()
-        print(f"✅ Synced {len(synced)} Slash Commands for Islamic Quran Bot!")
+        print(f"✅ Synced {len(synced)} Slash Commands for Hanabi Hikari Bot!")
     except Exception as e:
         print(f"❌ Failed to sync slash commands: {e}")
         
-    await bot.change_presence(activity=discord.Game(name="/help | /fiqh | /hadith | /tafsir"))
-    print(f"✅ Bot Quran ({bot.user}) is Online!")
+    await bot.change_presence(activity=discord.Game(name="Main bareng Hanabi~ 🌸 | /chat | @Hanabi"))
+    print(f"✅ Bot Hanabi Hikari ({bot.user}) is Online!")
 
 @bot.event
 async def on_message(message):
@@ -160,7 +150,7 @@ async def on_message(message):
                     continue
                 
                 if msg.author == bot.user:
-                    raw_history.append(f"Assistant: {clean_text}")
+                    raw_history.append(f"Hanabi: {clean_text}")
                 elif not msg.author.bot:
                     sender_name = msg.author.display_name
                     raw_history.append(f"User [{sender_name}]: {clean_text}")
@@ -168,7 +158,7 @@ async def on_message(message):
             raw_history.reverse()
             conversation_prompt = "\n".join(raw_history)
             
-            # Chat biasa menggunakan MODEL_CEPAT
+            # Chat biasa di Discord channel menggunakan MODEL_CEPAT (Gemini 2.0 Flash)
             jawaban = await asyncio.to_thread(tanya_gemini, conversation_prompt, model_utama=MODEL_CEPAT)
             await kirim_pesan_panjang(message, jawaban, mode="reply")
 
@@ -178,157 +168,33 @@ async def on_message(message):
 # 5. Slash Commands
 # ---------------------------------------------------------
 
-@bot.tree.command(name="help", description="Guide and commands for Quran, Hadith, Tafsir, Dua & Fiqh")
-async def slash_help(interaction: discord.Interaction):
-    guide_text = (
-        "📖 **Qur'an & Islamic Assistant - Guide & Commands**\n\n"
-        "**Core Commands:**\n"
-        "• `/hadith [query]` - Search authentic Hadiths with grading & book numbers.\n"
-        "• `/tafsir [verse]` - Get detailed Tafsir with explicit sources (Ibn Kathir, Kemenag, etc.).\n"
-        "• `/dua [topic]` - Look up authentic supplications with Arabic & translation.\n"
-        "• `/dalil [topic]` - Find Quranic & Hadith evidences for a topic.\n"
-        "• `/fiqh [question] [madhhab]` - Ask Fiqh rulings based on specific Madhhabs (Shafi'i, Hanafi, Maliki, Hanbali, Ja'fari, Zaidi, or Comparative).\n"
-        "• `/ask [prompt]` - General questions or quick verse lookup (e.g., `1:1-7`).\n"
-        "• `/search [query]` - Search references across Islamic web sources.\n"
-        "• `/ping` - Check bot status and latency.\n\n"
-        "⚠️ *All rulings cite authentic sources. Please consult local qualified scholars for personal fatwas.*"
-    )
-    await interaction.response.send_message(guide_text)
-
-@bot.tree.command(name="hadith", description="Search authentic Hadiths (Bukhari, Muslim, etc.) with sources")
+@bot.tree.command(name="chat", description="Ngobrol atau tanya apa saja ke Hanabi Hikari~ 🌸")
 @app_commands.describe(
-    topic="Topic or keywords of the Hadith",
-    book="Optional: Specific collection (e.g., Bukhari, Muslim, Abu Dawud)"
+    pesan="Pesan atau pertanyaan kamu untuk Hanabi",
+    mode="Pilih jenis respon (Santai Imut / Analisis Dalam)"
 )
-async def slash_hadith(interaction: discord.Interaction, topic: str, book: Optional[str] = None):
-    await interaction.response.defer()
-    sender_name = interaction.user.display_name
-    
-    prompt = f"[{sender_name}]: Please provide authentic Hadith(s) regarding: '{topic}'."
-    if book:
-        prompt += f" Specifically search from {book} collection."
-    prompt += " Include Arabic text, translation, collection name, hadith number, and authenticity status (Sahih/Hasan)."
-
-    jawaban = await asyncio.to_thread(tanya_gemini, prompt, model_utama=MODEL_CEPAT)
-    await kirim_pesan_panjang(interaction, jawaban, mode="slash")
-
-@bot.tree.command(name="tafsir", description="Get detailed Tafsir of a verse with source citations")
-@app_commands.describe(
-    verse="Verse reference (e.g., '2:255', 'Al-Baqarah 255')",
-    source="Optional: Tafsir book (e.g., 'Ibn Kathir', 'Al-Jalalayn', 'Kemenag RI')"
-)
-async def slash_tafsir(interaction: discord.Interaction, verse: str, source: Optional[str] = None):
-    await interaction.response.defer()
-    sender_name = interaction.user.display_name
-    
-    prompt = f"[{sender_name}]: Provide detailed Tafsir for verse {verse}."
-    if source:
-        prompt += f" Primary source: Tafsir {source}."
-    prompt += " Mention verse Arabic text, translation, and explanation from verified Tafsir scholars."
-
-    # Tafsir mengutamakan MODEL_DALAM (gemini-1.5-pro)
-    jawaban = await asyncio.to_thread(tanya_gemini, prompt, model_utama=MODEL_DALAM)
-    await kirim_pesan_panjang(interaction, jawaban, mode="slash")
-
-@bot.tree.command(name="dua", description="Search authentic Duas and Adhkar with sources")
-@app_commands.describe(
-    topic="Topic or situation for the Dua (e.g., 'before sleep', 'for forgiveness', 'anxiety')"
-)
-async def slash_dua(interaction: discord.Interaction, topic: str):
-    await interaction.response.defer()
-    sender_name = interaction.user.display_name
-    
-    prompt = f"[{sender_name}]: Provide authentic Dua(s) for situation: '{topic}'. Include Arabic text, transliteration, translation, and reference source (e.g., Hisnul Muslim / Sahih Bukhari)."
-
-    jawaban = await asyncio.to_thread(tanya_gemini, prompt, model_utama=MODEL_CEPAT)
-    await kirim_pesan_panjang(interaction, jawaban, mode="slash")
-
-@bot.tree.command(name="dalil", description="Find Quranic and Hadith proofs/evidences for a specific issue")
-@app_commands.describe(
-    topic="Topic or issue to search evidence for (e.g., 'patience in adversity', 'honoring parents')"
-)
-async def slash_dalil(interaction: discord.Interaction, topic: str):
-    await interaction.response.defer()
-    sender_name = interaction.user.display_name
-    
-    prompt = f"[{sender_name}]: List primary Quranic verses and authentic Hadith evidences (Dalil) for: '{topic}'. Cite exact Surah/Verse numbers and Hadith sources."
-
-    # Dalil mengutamakan MODEL_DALAM (gemini-1.5-pro)
-    jawaban = await asyncio.to_thread(tanya_gemini, prompt, model_utama=MODEL_DALAM)
-    await kirim_pesan_panjang(interaction, jawaban, mode="slash")
-
-@bot.tree.command(name="fiqh", description="Ask Fiqh rulings specified by Madhhab or comparative views")
-@app_commands.describe(
-    question="Your Fiqh question",
-    madhhab="Choose Madhhab or Comparative view"
-)
-@app_commands.choices(madhhab=[
-    app_commands.Choice(name="Shafi'i (Madzhab Syafi'i)", value="shafii"),
-    app_commands.Choice(name="Hanafi (Madzhab Hanafi)", value="hanafi"),
-    app_commands.Choice(name="Maliki (Madzhab Maliki)", value="maliki"),
-    app_commands.Choice(name="Hanbali (Madzhab Hanbali)", value="hanbali"),
-    app_commands.Choice(name="Ja'fari / Shia Twelver (Madzhab Ja'fari)", value="jaafari_shia"),
-    app_commands.Choice(name="Zaidi / Shia Zaidiyyah (Madzhab Zaidi)", value="zaidi_shia"),
-    app_commands.Choice(name="Comparative (Semua Madzhab / Perbandingan)", value="comparative_all")
+@app_commands.choices(mode=[
+    app_commands.Choice(name="⚡ Santai & Cepat (Gemini Flash)", value="cepat"),
+    app_commands.Choice(name="🧠 Detail & Mendalam (Gemini Thinking/Pro)", value="dalam")
 ])
-async def slash_fiqh(
+async def slash_chat(
     interaction: discord.Interaction, 
-    question: str, 
-    madhhab: Optional[app_commands.Choice[str]] = None
+    pesan: str, 
+    mode: Optional[app_commands.Choice[str]] = None
 ):
     await interaction.response.defer()
     sender_name = interaction.user.display_name
     
-    chosen_madhhab = madhhab.value if madhhab else "comparative_all"
+    pilihan_model = MODEL_DALAM if (mode and mode.value == "dalam") else MODEL_CEPAT
+    prompt_text = f"User [{sender_name}]: {pesan}"
     
-    prompt = (
-        f"[{sender_name}]: Fiqh Question: '{question}'.\n"
-        f"Target Madhhab Perspective: {chosen_madhhab.upper()}.\n"
-        f"Please explain the ruling according to classical scholars of this Madhhab, "
-        f"provide the Dalil (Quran/Hadith proofs), and cite authoritative Fiqh book references."
-    )
-
-    # Fiqh mengutamakan MODEL_DALAM (gemini-1.5-pro)
-    jawaban = await asyncio.to_thread(tanya_gemini, prompt, model_utama=MODEL_DALAM)
+    jawaban = await asyncio.to_thread(tanya_gemini, prompt_text, model_utama=pilihan_model)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
-@bot.tree.command(name="ask", description="Ask general questions or verse references (e.g. '1:1-7')")
-@app_commands.describe(
-    prompt="Enter prompt or verse number",
-    language="Optional: Preferred response language (e.g. 'en', 'id', 'ar')"
-)
-async def slash_ask(interaction: discord.Interaction, prompt: str, language: Optional[str] = None):
-    await interaction.response.defer()
-    sender_name = interaction.user.display_name
-    
-    final_prompt = f"[{sender_name}]: {prompt}"
-    if language:
-        final_prompt += f"\n\n[Instruction: Reply in language '{language}']"
-        
-    jawaban = await asyncio.to_thread(tanya_gemini, final_prompt, model_utama=MODEL_CEPAT)
-    await kirim_pesan_panjang(interaction, jawaban, mode="slash")
-
-@bot.tree.command(name="search", description="Search web references for Islamic studies")
-@app_commands.describe(
-    query="Topic or keywords to search",
-    language="Optional: Preferred response language"
-)
-async def slash_search(interaction: discord.Interaction, query: str, language: Optional[str] = None):
-    await interaction.response.defer()
-    sender_name = interaction.user.display_name
-    
-    web_data = await asyncio.to_thread(cari_web, query)
-    full_prompt = f"[{sender_name}]: Use references below to answer:\n\nREFERENCES:\n{web_data}\n\nQUESTION: {query}"
-    if language:
-        full_prompt += f"\n\n[Instruction: Reply in language '{language}']"
-        
-    jawaban = await asyncio.to_thread(tanya_gemini, full_prompt, model_utama=MODEL_CEPAT)
-    await kirim_pesan_panjang(interaction, jawaban, mode="slash")
-
-@bot.tree.command(name="ping", description="Check bot latency and status")
+@bot.tree.command(name="ping", description="Cek latency bot Hanabi")
 async def slash_ping(interaction: discord.Interaction):
     latency = round(bot.latency * 1000)
-    await interaction.response.send_message(f"🏓 **Pong!** Quran & Fiqh Bot latency: `{latency}ms`")
+    await interaction.response.send_message(f"🏓 **Pong!** Hanabi aktif dengan latency: `{latency}ms`~ Hehe 🌸")
 
 # ---------------------------------------------------------
 # 6. Run Bot
