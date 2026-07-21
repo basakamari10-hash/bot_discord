@@ -14,18 +14,17 @@ from typing import Optional
 # ---------------------------------------------------------
 st.set_page_config(page_title="Bot Quran Discord", page_icon="📖")
 st.title("📖 Bot Quran & Islamic Assistant 24/7")
-st.success("🟢 Bot Quran Server (Smart Hybrid Model Active)!")
+st.success("🟢 Bot Quran Server (Smart Hybrid Google Direct Active)!")
 
 # ---------------------------------------------------------
 # 2. Token & API Configuration
 # ---------------------------------------------------------
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_QURAN") or st.secrets.get("DISCORD_TOKEN_QURAN")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY") or st.secrets.get("OPENROUTER_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY")
 
-# Hybrid Model Configuration
-MODEL_CEPAT = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
-MODEL_DALAM = "nvidia/nemotron-3-ultra-550b-a55b:free"
-MODEL_CADANGAN_UMUM = "nvidia/nemotron-3-super-120b-a12b:free"
+# Hybrid Google Model Configuration
+MODEL_CEPAT = "gemini-2.0-flash"
+MODEL_DALAM = "gemini-1.5-pro"
 
 SYSTEM_PROMPT = """
 You are 'Qur'an & Islamic Studies Assistant', an authentic, highly respectful AI specialized in Islamic jurisprudence (Fiqh), Qur'an tafsir, authentic Hadiths, and Duas.
@@ -59,42 +58,41 @@ def bersihkan_looping(text: str) -> str:
     pattern = r'(\b[\w\u0600-\u06FF]+\b)(?:\s+\1){4,}'
     return re.sub(pattern, r'\1 ... [Teks berulang dipotong otomatis]', text)
 
-def tanya_openrouter(messages_list, model_utama=MODEL_CEPAT):
-    """Sistem Hybrid dengan Rantai Prioritas & Automatic Fallback."""
+def tanya_gemini(prompt_text, model_utama=MODEL_CEPAT):
+    """Fungsi Hybrid Google Direct dengan Automatic Fallback."""
     daftar_prioritas = [model_utama]
     
-    # Tambahkan model cadangan jika belum ada di list
-    for fallback in [MODEL_CEPAT, MODEL_CADANGAN_UMUM]:
-        if fallback not in daftar_prioritas:
-            daftar_prioritas.append(fallback)
+    # Masukkan model fallback jika belum ada
+    for m in [MODEL_CEPAT, MODEL_DALAM]:
+        if m not in daftar_prioritas:
+            daftar_prioritas.append(m)
 
-    url = "https://openrouter.ai/api/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json"
-    }
+    headers = {"Content-Type": "application/json"}
     
-    for model in daftar_prioritas:
+    # Coba satu per satu sesuai urutan prioritas
+    for model_name in daftar_prioritas:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
         payload = {
-            "model": model,
-            "messages": messages_list,
-            "temperature": 0.3,
-            "max_tokens": 3000,
-            "frequency_penalty": 0.5,
-            "presence_penalty": 0.3
+            "contents": [{"parts": [{"text": prompt_text}]}],
+            "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+            "generationConfig": {
+                "temperature": 0.3,
+                "maxOutputTokens": 3000
+            }
         }
+        
         try:
             res = requests.post(url, headers=headers, json=payload, timeout=25)
             if res.status_code == 200:
                 data = res.json()
-                raw_content = data['choices'][0]['message']['content']
+                raw_content = data['candidates'][0]['content']['parts'][0]['text']
                 return bersihkan_looping(raw_content)
             else:
-                print(f"⚠️ Model {model} gagal (HTTP {res.status_code}), mencoba model cadangan...")
+                print(f"⚠️ Gemini Model {model_name} error ({res.status_code}), mencoba model cadangan...")
         except Exception as e:
-            print(f"⚠️ Koneksi ke {model} error ({e}), mencoba model cadangan...")
-            
-    return "⚠️ Maaf, seluruh server model AI sedang sibuk. Silakan coba beberapa saat lagi."
+            print(f"⚠️ Koneksi ke Gemini {model_name} error ({e}), mencoba model cadangan...")
+
+    return "⚠️ Maaf, seluruh server Google Gemini sedang sibuk. Silakan coba beberapa saat lagi."
 
 def cari_web(query):
     try:
@@ -155,25 +153,23 @@ async def on_message(message):
 
     if is_reply_to_bot or is_mentioned:
         async with message.channel.typing():
-            messages_payload = [{"role": "system", "content": SYSTEM_PROMPT}]
-            
             raw_history = []
-            async for msg in message.channel.history(limit=10):
+            async for msg in message.channel.history(limit=8):
                 clean_text = msg.content.replace(f"<@{bot.user.id}>", "").strip()
                 if not clean_text:
                     continue
                 
                 if msg.author == bot.user:
-                    raw_history.append({"role": "assistant", "content": clean_text})
+                    raw_history.append(f"Assistant: {clean_text}")
                 elif not msg.author.bot:
                     sender_name = msg.author.display_name
-                    raw_history.append({"role": "user", "content": f"[{sender_name}]: {clean_text}"})
+                    raw_history.append(f"User [{sender_name}]: {clean_text}")
 
             raw_history.reverse()
-            messages_payload.extend(raw_history)
+            conversation_prompt = "\n".join(raw_history)
             
             # Chat biasa menggunakan MODEL_CEPAT
-            jawaban = await asyncio.to_thread(tanya_openrouter, messages_payload, model_utama=MODEL_CEPAT)
+            jawaban = await asyncio.to_thread(tanya_gemini, conversation_prompt, model_utama=MODEL_CEPAT)
             await kirim_pesan_panjang(message, jawaban, mode="reply")
 
     await bot.process_commands(message)
@@ -213,12 +209,7 @@ async def slash_hadith(interaction: discord.Interaction, topic: str, book: Optio
         prompt += f" Specifically search from {book} collection."
     prompt += " Include Arabic text, translation, collection name, hadith number, and authenticity status (Sahih/Hasan)."
 
-    messages_payload = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": prompt}
-    ]
-    
-    jawaban = await asyncio.to_thread(tanya_openrouter, messages_payload, model_utama=MODEL_CEPAT)
+    jawaban = await asyncio.to_thread(tanya_gemini, prompt, model_utama=MODEL_CEPAT)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
 @bot.tree.command(name="tafsir", description="Get detailed Tafsir of a verse with source citations")
@@ -235,13 +226,8 @@ async def slash_tafsir(interaction: discord.Interaction, verse: str, source: Opt
         prompt += f" Primary source: Tafsir {source}."
     prompt += " Mention verse Arabic text, translation, and explanation from verified Tafsir scholars."
 
-    messages_payload = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": prompt}
-    ]
-    
-    # Tafsir menggunakan MODEL_DALAM (Nemotron 550B)
-    jawaban = await asyncio.to_thread(tanya_openrouter, messages_payload, model_utama=MODEL_DALAM)
+    # Tafsir mengutamakan MODEL_DALAM (gemini-1.5-pro)
+    jawaban = await asyncio.to_thread(tanya_gemini, prompt, model_utama=MODEL_DALAM)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
 @bot.tree.command(name="dua", description="Search authentic Duas and Adhkar with sources")
@@ -254,12 +240,7 @@ async def slash_dua(interaction: discord.Interaction, topic: str):
     
     prompt = f"[{sender_name}]: Provide authentic Dua(s) for situation: '{topic}'. Include Arabic text, transliteration, translation, and reference source (e.g., Hisnul Muslim / Sahih Bukhari)."
 
-    messages_payload = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": prompt}
-    ]
-    
-    jawaban = await asyncio.to_thread(tanya_openrouter, messages_payload, model_utama=MODEL_CEPAT)
+    jawaban = await asyncio.to_thread(tanya_gemini, prompt, model_utama=MODEL_CEPAT)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
 @bot.tree.command(name="dalil", description="Find Quranic and Hadith proofs/evidences for a specific issue")
@@ -272,13 +253,8 @@ async def slash_dalil(interaction: discord.Interaction, topic: str):
     
     prompt = f"[{sender_name}]: List primary Quranic verses and authentic Hadith evidences (Dalil) for: '{topic}'. Cite exact Surah/Verse numbers and Hadith sources."
 
-    messages_payload = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": prompt}
-    ]
-    
-    # Dalil menggunakan MODEL_DALAM (Nemotron 550B)
-    jawaban = await asyncio.to_thread(tanya_openrouter, messages_payload, model_utama=MODEL_DALAM)
+    # Dalil mengutamakan MODEL_DALAM (gemini-1.5-pro)
+    jawaban = await asyncio.to_thread(tanya_gemini, prompt, model_utama=MODEL_DALAM)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
 @bot.tree.command(name="fiqh", description="Ask Fiqh rulings specified by Madhhab or comparative views")
@@ -312,13 +288,8 @@ async def slash_fiqh(
         f"provide the Dalil (Quran/Hadith proofs), and cite authoritative Fiqh book references."
     )
 
-    messages_payload = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": prompt}
-    ]
-    
-    # Fiqh menggunakan MODEL_DALAM (Nemotron 550B)
-    jawaban = await asyncio.to_thread(tanya_openrouter, messages_payload, model_utama=MODEL_DALAM)
+    # Fiqh mengutamakan MODEL_DALAM (gemini-1.5-pro)
+    jawaban = await asyncio.to_thread(tanya_gemini, prompt, model_utama=MODEL_DALAM)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
 @bot.tree.command(name="ask", description="Ask general questions or verse references (e.g. '1:1-7')")
@@ -334,12 +305,7 @@ async def slash_ask(interaction: discord.Interaction, prompt: str, language: Opt
     if language:
         final_prompt += f"\n\n[Instruction: Reply in language '{language}']"
         
-    messages_payload = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": final_prompt}
-    ]
-        
-    jawaban = await asyncio.to_thread(tanya_openrouter, messages_payload, model_utama=MODEL_CEPAT)
+    jawaban = await asyncio.to_thread(tanya_gemini, final_prompt, model_utama=MODEL_CEPAT)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
 @bot.tree.command(name="search", description="Search web references for Islamic studies")
@@ -356,12 +322,7 @@ async def slash_search(interaction: discord.Interaction, query: str, language: O
     if language:
         full_prompt += f"\n\n[Instruction: Reply in language '{language}']"
         
-    messages_payload = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": full_prompt}
-    ]
-        
-    jawaban = await asyncio.to_thread(tanya_openrouter, messages_payload, model_utama=MODEL_CEPAT)
+    jawaban = await asyncio.to_thread(tanya_gemini, full_prompt, model_utama=MODEL_CEPAT)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
 @bot.tree.command(name="ping", description="Check bot latency and status")
