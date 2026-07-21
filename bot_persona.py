@@ -21,7 +21,7 @@ st.success("🟢 Astra AI Server (Memory & Split-Message Active)!")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_PERSONA") or st.secrets.get("DISCORD_TOKEN_PERSONA")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY") or st.secrets.get("OPENROUTER_API_KEY")
 
-MODEL_NAME = "mistralai/mistral-small-24b-instruct-2501:free"
+MODEL_NAME = "google/gemini-2.0-flash-exp:free"
 
 SYSTEM_PROMPT = """
 You are shion,a virtual assistant with a cute femboy personality, friendly, full of energy, and very caring.
