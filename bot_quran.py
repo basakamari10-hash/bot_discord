@@ -1,6 +1,7 @@
 import os
 import re
 import asyncio
+import time
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -27,7 +28,7 @@ GROQ_API_KEY = (
     or st.secrets.get("GROQ_API_KEY")
 )
 
-# 3-Model Routing Strategy (GPT-OSS 120B, Llama 8B, Llama 70B)
+# 3-Model Routing Strategy
 MODEL_BERAT = "openai/gpt-oss-120b"          # Mode Utama / Berat (Tafsir & Fiqh Detail)
 MODEL_RINGAN = "llama-3.1-8b-instant"       # Mode Ringan (Chat Harian / Fast)
 MODEL_CADANGAN = "llama-3.3-70b-versatile"  # Emergency Fallback
@@ -194,6 +195,7 @@ async def slash_help(interaction: discord.Interaction):
         "• `/fiqh [question] [madhhab]` - Ask Fiqh rulings (Uses GPT-OSS 120B Engine).\n"
         "• `/ask [prompt]` - General questions or quick verse lookup.\n"
         "• `/search [query]` - Search references across Islamic web sources.\n"
+        "• `/test` - Test Groq API latency & status.\n"
         "• `/ping` - Check bot status and latency.\n"
     )
     await interaction.response.send_message(guide_text)
@@ -273,6 +275,25 @@ async def slash_search(interaction: discord.Interaction, query: str):
         
     jawaban = await asyncio.to_thread(tanya_groq, full_prompt, MODEL_RINGAN)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
+
+@bot.tree.command(name="test", description="Tes koneksi Groq API, latensi, dan status sistem 3-Tier")
+async def slash_test(interaction: discord.Interaction):
+    await interaction.response.defer()
+    start_time = time.time()
+    
+    respon = await asyncio.to_thread(tanya_groq, "Tes sistem: Berikan 1 kalimat salam Islami singkat.", MODEL_RINGAN)
+    api_latency = round((time.time() - start_time) * 1000)
+    discord_ping = round(bot.latency * 1000)
+    
+    status_msg = (
+        "🧪 **[SYSTEM DIAGNOSTIC - QURAN BOT]**\n\n"
+        f"🟢 **Status Groq API:** Connected & Active\n"
+        f"⚡ **API Latency:** `{api_latency}ms`\n"
+        f"📡 **Discord Ping:** `{discord_ping}ms`\n"
+        f"🧠 **Model Active:** 3-Tier (`openai/gpt-oss-120b` | `llama-3.1-8b-instant` | `llama-3.3-70b-versatile`)\n\n"
+        f"💬 **Hasil Output Test:**\n> {respon}"
+    )
+    await interaction.followup.send(status_msg)
 
 @bot.tree.command(name="ping", description="Check bot status")
 async def slash_ping(interaction: discord.Interaction):
