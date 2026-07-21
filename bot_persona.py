@@ -93,7 +93,7 @@ def tanya_gemini(prompt_text, model_utama=MODEL_CEPAT):
         except Exception as e:
             print(f"⚠️ Koneksi Hanabi ke ({model_name}) error ({e}), mencoba fallback...")
 
-    return "Ummm... e-eto... maaf yaa, server Hanabi lagi agak pusing nih. Coba panggil Hanabi sebentar lagi yaa~ 🥺🌸"
+    return "Ummm... e-eto... maaf yaa, server Sion lagi agak pusing nih. Coba panggil Hanabi sebentar lagi yaa~ 🥺🌸"
 
 async def kirim_pesan_panjang(target, text, mode="reply"):
     """Memecah pesan panjang (>1800 karakter) agar sesuai limit Discord."""
