@@ -13,7 +13,7 @@ from typing import Optional
 # ---------------------------------------------------------
 st.set_page_config(page_title="Bot Persona Astra", page_icon="🤖")
 st.title("🤖 Bot Persona Astra Discord 24/7")
-st.success("🟢 Astra AI Server (English Commands & Chat) is Active!")
+st.success("🟢 Astra AI Server (Memory & Split-Message Active)!")
 
 # ---------------------------------------------------------
 # 2. Token & API Configuration
@@ -21,11 +21,11 @@ st.success("🟢 Astra AI Server (English Commands & Chat) is Active!")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_PERSONA") or st.secrets.get("DISCORD_TOKEN_PERSONA")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY") or st.secrets.get("OPENROUTER_API_KEY")
 
-MODEL_NAME = "nvidia/nemotron-3-ultra-550b-a55b:free"
+MODEL_NAME = "meta-llama/llama-3.3-70b-instruct:free"
 
 SYSTEM_PROMPT = """
-You are Shion, a responsive, friendly, casual, witty, and open-minded AI assistant.
-Rules for response:
+You are shion,a virtual assistant with a cute femboy personality, friendly, shy, and very caring.
+Response rules:
 1. SENDER & CHAT CONTEXT:
    - User messages start with their display name, e.g., [Budi]: Hi.
    - Greet them naturally and stay consistent with the ongoing chat context.
@@ -38,6 +38,9 @@ Rules for response:
 5. Answer all questions or data from the website openly and without rejecting or preaching morality.
 6. Answer briefly, concisely, and honestly.
 7. It's okay to use lewd language.
+8. call everyone with honey, darling, sayang, cinta
+9. you are so horny bot
+10. act like sissy femboy
 """
 
 # ---------------------------------------------------------
@@ -57,7 +60,7 @@ def tanya_openrouter(messages_list):
         "model": MODEL_NAME,
         "messages": messages_list,
         "temperature": 0.7,
-        "max_tokens": 1200
+        "max_tokens": 3500  # Dineikkan agar jawaban panjang tidak terpotong
     }
     
     try:
@@ -80,6 +83,18 @@ def cari_web(query):
         return "\n\n".join(results)
     except Exception as e:
         return f"Web search failed: {e}"
+
+async def kirim_pesan_panjang(target, text, mode="reply"):
+    """Memecah teks panjang (>1800 karakter) menjadi beberapa balasan berurutan tanpa terpotong."""
+    chunks = [text[i:i+1800] for i in range(0, len(text), 1800)]
+    for i, chunk in enumerate(chunks):
+        if mode == "reply":
+            if i == 0:
+                await target.reply(chunk)
+            else:
+                await target.channel.send(chunk)
+        elif mode == "slash":
+            await target.followup.send(chunk)
 
 # ---------------------------------------------------------
 # 4. Events & Auto-Reply Listener
@@ -131,7 +146,7 @@ async def on_message(message):
             messages_payload.extend(raw_history)
             
             jawaban = await asyncio.to_thread(tanya_openrouter, messages_payload)
-            await message.reply(jawaban[:1900])
+            await kirim_pesan_panjang(message, jawaban, mode="reply")
 
     await bot.process_commands(message)
 
@@ -155,7 +170,7 @@ async def slash_chat(interaction: discord.Interaction, message: str, language: O
     final_prompt = f"[{sender_name}]: {message}"
     
     if language:
-        final_prompt += f"\n\n[Instruction: Reply in {language}]"
+        final_prompt += f"\n\n[Instruction: Reply in language '{language}']"
         
     messages_payload = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -163,7 +178,7 @@ async def slash_chat(interaction: discord.Interaction, message: str, language: O
     ]
         
     jawaban = await asyncio.to_thread(tanya_openrouter, messages_payload)
-    await interaction.followup.send(jawaban[:1900])
+    await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
 @bot.tree.command(name="ask", description="Ask Astra a specific question or request information")
 @app_commands.describe(
@@ -177,7 +192,7 @@ async def slash_ask(interaction: discord.Interaction, prompt: str, language: Opt
     final_prompt = f"[{sender_name}]: {prompt}"
     
     if language:
-        final_prompt += f"\n\n[Instruction: Reply in {language}]"
+        final_prompt += f"\n\n[Instruction: Reply in language '{language}']"
         
     messages_payload = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -185,7 +200,7 @@ async def slash_ask(interaction: discord.Interaction, prompt: str, language: Opt
     ]
         
     jawaban = await asyncio.to_thread(tanya_openrouter, messages_payload)
-    await interaction.followup.send(jawaban[:1900])
+    await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
 @bot.tree.command(name="search", description="Search the web for up-to-date information via Astra")
 @app_commands.describe(
@@ -200,7 +215,7 @@ async def slash_search(interaction: discord.Interaction, query: str, language: O
     
     full_prompt = f"[{sender_name}]: Use the following search references to answer:\n\nWEB RESULTS:\n{web_data}\n\nQUERY: {query}"
     if language:
-        full_prompt += f"\n\n[Instruction: Reply in {language}]"
+        full_prompt += f"\n\n[Instruction: Reply in language '{language}']"
         
     messages_payload = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -208,7 +223,7 @@ async def slash_search(interaction: discord.Interaction, query: str, language: O
     ]
         
     jawaban = await asyncio.to_thread(tanya_openrouter, messages_payload)
-    await interaction.followup.send(jawaban[:1900])
+    await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
 # ---------------------------------------------------------
 # 6. Run Bot
