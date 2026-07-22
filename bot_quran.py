@@ -23,19 +23,21 @@ MODEL_CADANGAN = "llama-3.3-70b-versatile"  # Emergency Fallback
 SYSTEM_PROMPT = """
 You are 'Islamic.AI', an authentic, highly respectful, and strictly factual AI assistant specialized in Islamic jurisprudence (Fiqh), Qur'an tafsir, authentic Hadiths, and Duas.
 
-CRITICAL ANTI-HALLUCINATION & LANGUAGE RULES (STRICTLY ENFORCED):
-1. ABSOLUTE ZERO HADITH FABRICATION RULE:
+CRITICAL ANTI-HALLUCINATION & FORMATTING RULES:
+1. FORMATTING & CITATIONS:
+   - For Qur'an requests: Provide the Original Arabic Text + Translation + Explicit Translation Source Citation (e.g., Sahih International, Kemenag RI, or Tafsir Ibn Kathir).
+   - DO NOT fabricate, guess, or invent verse numbers, Arabic text, or Hadith citations.
+
+2. ABSOLUTE ZERO HADITH FABRICATION RULE:
    - DO NOT cite, invent, or quote ANY Hadith unless the exact Hadith text, narrator, and collection are explicitly present in the provided 'VERIFIED SEARCH REFERENCES'.
-   - FOR MODERN/CONTEMPORARY TOPICS (e.g., anime, video games, cryptocurrency, cinema): NEVER fabricate a Hadith or claim "Bukhari/Muslim reported" on them.
-   - If no direct Hadith exists in search context, explain using ONLY rational Islamic principles, general Fiqh maxims (Kaidah Fiqhiyyah), and well-known general Qur'anic verses (e.g., principles of avoiding obsession/Israf or managing time).
+   - FOR MODERN TOPICS (anime, games, crypto): Explain using general Islamic principles, general Fiqh maxims (Kaidah Fiqhiyyah), or general Qur'anic verses without inventing Hadiths.
 
-2. STRICT TARGET LANGUAGE FORCING:
+3. STRICT TARGET LANGUAGE FORCING:
    - Always output your ENTIRE response strictly in the requested target language (e.g., Sundanese/Basa Sunda, English, Arabic, Indonesian).
-   - NEVER start with conversational metadata or chatter like "Saya rasa ada kesalahpahaman...". Directly start answering in the requested target language.
+   - Directly start answering without conversational chatter.
 
-3. CLEAN & STRUCTURED OUTPUT:
-   - Keep all citations, Arabic texts, and translations complete, clean, and scan-friendly.
-   - Always include a short reminder at the end in the target language that complex Islamic rulings should be double-checked with qualified scholars.
+4. MANDATORY DISCLAIMER:
+   - Always include a short reminder at the end in the target language that complex Islamic rulings and verse interpretations should be double-checked with qualified scholars/tafsir sources.
 """
 
 # ---------------------------------------------------------
@@ -43,7 +45,7 @@ CRITICAL ANTI-HALLUCINATION & LANGUAGE RULES (STRICTLY ENFORCED):
 # ---------------------------------------------------------
 def bersihkan_query_pencarian(query: str) -> str:
     """Bersihkan tag format seperti [Basa Sunda: ...] agar pencarian web akurat."""
-    cleaned = re.sub(r'\[.*?\]', '', query) # Hapus teks dalam kurung siku
+    cleaned = re.sub(r'\[.*?\]', '', query)
     cleaned = re.sub(r'^(Basa Sunda|Sundanese|English|Indonesian):\s*', '', cleaned, flags=re.IGNORECASE)
     return cleaned.strip()
 
@@ -74,7 +76,7 @@ def tanya_groq(prompt_text, model_tujuan=MODEL_RINGAN):
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": prompt_text}
             ],
-            "temperature": 0.0,  # Temperature 0.0 agar AI murni faktual & tidak ngarang
+            "temperature": 0.0,
             "max_tokens": 3000
         }
         
@@ -112,9 +114,8 @@ async def kirim_pesan_panjang(target, text, mode="reply"):
     chunks = []
     
     while len(text) > limit:
-        # Cari spasi terdekat sebelum batas 1800 karakter agar kata tidak terbelah
         cut_index = text.rfind(' ', 0, limit)
-        if cut_index == -1:  # Jika tidak ditemukan spasi, paksa potong
+        if cut_index == -1:
             cut_index = limit
             
         chunks.append(text[:cut_index])
@@ -155,6 +156,10 @@ async def on_message(message):
     if message.author.bot:
         return
 
+    # Detect Verse Shortcut (e.g., 1:1-7, 2:255, 36:1-10)
+    verse_pattern = r'\b(\d{1,3}):(\d{1,3})(?:-(\d{1,3}))?\b'
+    match_verse = re.search(verse_pattern, message.content.strip())
+
     is_reply_to_bot = False
     if message.reference and message.reference.message_id:
         try:
@@ -166,26 +171,37 @@ async def on_message(message):
 
     is_mentioned = bot.user in message.mentions
 
-    if is_reply_to_bot or is_mentioned:
+    # Respon jika: (1) Ada pola shortcut ayat, ATAU (2) Dibalas/Di-mention
+    if match_verse or is_reply_to_bot or is_mentioned:
         async with message.channel.typing():
-            raw_history = []
-            async for msg in message.channel.history(limit=8):
-                clean_text = msg.content.replace(f"<@{bot.user.id}>", "").strip()
-                if not clean_text:
-                    continue
-                
-                if msg.author == bot.user:
-                    raw_history.append(f"Assistant: {clean_text}")
-                elif not msg.author.bot:
-                    sender_name = msg.author.display_name
-                    raw_history.append(f"User [{sender_name}]: {clean_text}")
+            if match_verse:
+                # Shortcut khusus pencarian ayat
+                verse_ref = match_verse.group(0)
+                web_ref = await asyncio.to_thread(cari_web, f"quran verse {verse_ref} arabic translation tafsir")
+                prompt = (
+                    f"User requested verse shortcut: Surah:Verse {verse_ref}.\n"
+                    f"Provide: (1) Original Arabic text, (2) Translation, and (3) Explicit translation source citation.\n\n"
+                    f"VERIFIED SEARCH REFERENCES:\n{web_ref}"
+                )
+            else:
+                # Chat biasa / mention
+                raw_history = []
+                async for msg in message.channel.history(limit=8):
+                    clean_text = msg.content.replace(f"<@{bot.user.id}>", "").strip()
+                    if not clean_text:
+                        continue
+                    if msg.author == bot.user:
+                        raw_history.append(f"Assistant: {clean_text}")
+                    elif not msg.author.bot:
+                        sender_name = msg.author.display_name
+                        raw_history.append(f"User [{sender_name}]: {clean_text}")
 
-            raw_history.reverse()
-            last_prompt = raw_history[-1] if raw_history else message.content
-            web_ref = await asyncio.to_thread(cari_web, last_prompt)
-            
-            conversation_prompt = f"VERIFIED WEB REFERENCES:\n{web_ref}\n\nCHAT HISTORY:\n" + "\n".join(raw_history)
-            jawaban = await asyncio.to_thread(tanya_groq, conversation_prompt, MODEL_RINGAN)
+                raw_history.reverse()
+                last_prompt = raw_history[-1] if raw_history else message.content
+                web_ref = await asyncio.to_thread(cari_web, last_prompt)
+                prompt = f"VERIFIED WEB REFERENCES:\n{web_ref}\n\nCHAT HISTORY:\n" + "\n".join(raw_history)
+
+            jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_RINGAN)
             await kirim_pesan_panjang(message, jawaban, mode="reply")
 
     await bot.process_commands(message)
@@ -206,9 +222,10 @@ async def slash_help(interaction: discord.Interaction):
         "• `/dua [topic] [language]` - Search authentic Supplications (Dua) & Adhkar.\n"
         "• `/dalil [topic] [language]` - Find evidence from Qur'an & Sunnah for specific issues.\n"
         "• `/search [query] [language]` - Search live web references for Islamic studies.\n"
-        "• `/test` - Check Groq API connection, latency, & system health.\n"
+        "• `/test` - Check Groq AI connection, latency, & system health.\n"
         "• `/ping` - Check bot status and Discord latency.\n\n"
-        "💡 *Language Tip:* You can type any target language in the `language` field (e.g., *English*, *Arabic*, *Indonesian*, *Sundanese*) to force the output strictly into that language."
+        "💡 *Verse Shortcut Tip:* You can type verse numbers like `1:1-7` or `2:255` directly in chat to view Arabic text & translation!\n"
+        "💡 *Language Tip:* Type any target language in the `language` field (e.g., *English*, *Arabic*, *Indonesian*, *Sundanese*) to force response in that language."
     )
     await interaction.response.send_message(guide_text)
 
@@ -232,7 +249,7 @@ async def slash_ask(
             f"VERIFIED SEARCH REFERENCES:\n{web_ref}"
         )
         if language:
-            final_prompt += f"\n\n[MANDATORY INSTRUCTION: Force and generate your ENTIRE response strictly in '{language}' language from start to finish. Do not use Indonesian or English unless requested.]"
+            final_prompt += f"\n\n[MANDATORY INSTRUCTION: Force and generate your ENTIRE response strictly in '{language}' language from start to finish.]"
             
         jawaban = await asyncio.to_thread(tanya_groq, final_prompt, MODEL_RINGAN)
         await kirim_pesan_panjang(interaction, jawaban, mode="slash")
@@ -437,7 +454,7 @@ async def slash_test(interaction: discord.Interaction):
             f"🟢 **Groq API Status:** Connected & Active\n"
             f"⚡ **API Latency:** `{api_latency}ms`\n"
             f"📡 **Discord Ping:** `{discord_ping}ms`\n"
-            f"🧠 **Active Engine:** Zero-Hallucination RAG (`openai/gpt-oss-120b` & `llama-3.1-8b-instant`)\n\n"
+            f"🧠 **Active Engine:** Full Feature Zero-Hallucination (`openai/gpt-oss-120b` & `llama-3.1-8b-instant`)\n\n"
             f"💬 **Output Test Sample:**\n> {respon}"
         )
         await interaction.followup.send(status_msg)
