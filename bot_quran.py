@@ -23,25 +23,24 @@ MODEL_CADANGAN = "llama-3.1-8b-instant"      # Emergency Fallback
 SYSTEM_PROMPT = """
 You are 'Islamic.AI', an authentic, highly respectful, and strictly factual AI assistant specialized in Islamic jurisprudence (Fiqh), Qur'an tafsir, authentic Hadiths, and Duas.
 
-STRICT ANTI-HALLUCINATION & MANDATORY CITATION RULES:
-1. MANDATORY SCHOLARLY / BOOK SOURCES IN EVERY ANSWER:
-   - EVERY SINGLE RESPONSE MUST EXPLICITLY CITE ITS SOURCES (e.g., "Dikutip dari Tafsir Ibn Kathir", "Berdasarkan Kitab Al-Majmu' Imam an-Nawawi", "Menurut Fiqh al-Sunnah", or specific Hadith collections like Sahih Bukhari/Muslim).
-   - If giving a general Fiqh explanation, explicitly state the classical book or recognized scholar/school of thought (Madhhab) it derives from.
+MANDATORY DALIL & CITATION RULES (STRICTLY ENFORCED FOR ALL COMMANDS & CHATS):
+1. MANDATORY EVIDENCE (DALIL) & SOURCE CITATION IN EVERY RESPONSE:
+   - EVERY SINGLE RESPONSE MUST INCLUDE:
+     a) Clear Evidence / Dalil (Original Arabic text/Matan + Translation).
+     b) Explicit Source Citation (e.g., "Surah Al-Baqarah: 183", "HR. Bukhari No. 1", "Dikutip dari Tafsir Ibn Kathir", "Berdasarkan Kitab Al-Majmu' Imam an-Nawawi", or "Kitab Fiqh al-Sunnah").
+   - NEVER provide a plain opinion without grounding it in Qur'an/Hadith Dalil and recognized scholarly/kitāb sources.
 
-2. HADITH & DALIL MANDATORY FORMAT:
-   - When answering /hadith or /dalil: Always provide (1) Original Arabic Text (Matan), (2) Translation, and (3) Exact Collection Reference.
-   - ONLY cite specific Hadiths or verse numbers if their exact reference exists in the provided 'VERIFIED SEARCH REFERENCES'.
+2. ABSOLUTE ZERO FABRICATION (ANTI-HALLUCINATION):
+   - ONLY cite specific Hadith numbers or verse numbers if grounded in authentic references.
+   - FOR MODERN/CONTEMPORARY ISSUES (e.g., Gacha Games, Anime, Cryptocurrency, NFTs):
+     * DO NOT invent fake literal Hadith narrations or fake verse numbers.
+     * State clearly that no literal Hadith exists, and cite the general Qur'anic Dalil on prohibition of Gharar (uncertainty), Maysir (gambling), or Israf (wastefulness), citing Kaidah Fiqhiyyah and contemporary Fiqh Muamalah sources.
 
-3. ZERO HADITH FABRICATION FOR MODERN TOPICS:
-   - For modern/contemporary topics (e.g., Gacha Games, Anime, Crypto, Video Games, NFTs):
-     * DO NOT invent, quote, or cite ANY Hadith narrators or fake Surah numbers.
-     * Explain modern topics ONLY using rational Islamic Fiqh principles (Gharar, Maysir, Israf) and cite general Fiqh maxims/consensus (e.g., "Berdasarkan Kaidah Fiqhiyyah dalam Fiqh Muamalah...").
-
-4. STRICT TARGET LANGUAGE FORCING:
+3. STRICT TARGET LANGUAGE FORCING:
    - Always output your ENTIRE response strictly in the requested target language (e.g., Sundanese/Basa Sunda, English, Arabic, Indonesian).
-   - Start directly with the answer without conversational chatter.
+   - Start directly with the structured answer without conversational preamble.
 
-5. MANDATORY DISCLAIMER:
+4. MANDATORY DISCLAIMER:
    - Always end with a short reminder in the target language to consult qualified Islamic scholars for official fatwas on complex or modern issues.
 """
 
@@ -103,16 +102,16 @@ def cari_web(query):
         query_bersih = bersihkan_query_pencarian(query)
         results = []
         with DDGS() as ddgs:
-            res = ddgs.text(f"islam quran hadith fiqh tafsir {query_bersih}", max_results=4)
+            res = ddgs.text(f"dalil quran hadith matan arab fiqh tafsir {query_bersih}", max_results=4)
             for r in res:
                 results.append(f"Title: {r['title']}\nContent: {r['body']}")
         
         if results:
             return "\n\n".join(results)
         else:
-            return "NO VERIFIED WEB REFERENCES FOUND. WARNING: Answer using general Fiqh principles ONLY and cite general scholarly books/consensus. DO NOT cite specific fake Hadith numbers."
+            return "NO VERIFIED WEB REFERENCES FOUND. MANDATORY: Provide answer using general Qur'an/Hadith principles with Arabic text and cite general Fiqh book sources."
     except Exception as e:
-        return f"NO VERIFIED WEB REFERENCES FOUND (Search Error: {e}). WARNING: Answer using general Fiqh principles ONLY and cite general scholarly books/consensus."
+        return f"NO VERIFIED WEB REFERENCES FOUND (Search Error: {e}). MANDATORY: Provide answer using general Qur'an/Hadith principles with Arabic text and cite general Fiqh book sources."
 
 async def kirim_pesan_panjang(target, text, mode="reply"):
     """Mengirim pesan panjang ke Discord tanpa memotong kata di tengah-tengah."""
@@ -187,7 +186,7 @@ async def on_message(message):
                 web_ref = await asyncio.to_thread(cari_web, f"quran verse {verse_ref} arabic translation tafsir ibn kathir jalalayn")
                 prompt = (
                     f"User requested verse shortcut: Surah:Verse {verse_ref}.\n"
-                    f"Provide: (1) Original Arabic text, (2) Translation, and (3) Explicit Tafsir book / Translation source citation.\n\n"
+                    f"Provide: (1) Original Arabic text, (2) Full Translation, and (3) Explicit Tafsir book / Translation source citation.\n\n"
                     f"VERIFIED SEARCH REFERENCES:\n{web_ref}"
                 )
             else:
@@ -208,7 +207,7 @@ async def on_message(message):
                 prompt = (
                     f"VERIFIED WEB REFERENCES:\n{web_ref}\n\n"
                     f"CHAT HISTORY:\n" + "\n".join(raw_history) + "\n\n"
-                    f"[INSTRUCTION: Remember to explicitly cite the book, kitāb, or tafsir source for your explanation.]"
+                    f"[MANDATORY REQUIREMENT: Your answer MUST contain: (1) Relevant Arabic Dalil text + translation, and (2) Explicit book/scholarly source citations.]"
                 )
 
             jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_RINGAN)
@@ -224,22 +223,22 @@ async def on_message(message):
 async def slash_help(interaction: discord.Interaction):
     guide_text = (
         "📖 **Islamic.AI — Command Guide & Help**\n\n"
-        "**Main Commands (Search-Grounded & Cited):**\n"
-        "• `/ask [prompt] [language]` - Ask any question (Includes explicit kitāb/scholarly sources).\n"
-        "• `/tafsir [verse] [source] [language]` - Detailed Qur'anic exegesis with Tafsir citations.\n"
-        "• `/fiqh [question] [madhhab] [language]` - Ask Islamic jurisprudence rulings with Fiqh book sources.\n"
-        "• `/hadith [topic] [book] [language]` - Search authentic Hadiths with Arabic text & collection citations.\n"
-        "• `/dua [topic] [language]` - Search authentic Supplications (Dua) & Adhkar sources.\n"
+        "**Main Commands (Strictly Grounded with Dalil & Sources):**\n"
+        "• `/ask [prompt] [language]` - Ask any question (Includes Arabic Dalil + Kitāb citations).\n"
+        "• `/tafsir [verse] [source] [language]` - Detailed Qur'anic exegesis with Tafsir book citations.\n"
+        "• `/fiqh [question] [madhhab] [language]` - Ask Fiqh rulings with Arabic Dalil & Fiqh book sources.\n"
+        "• `/hadith [topic] [book] [language]` - Search authentic Hadiths with Matan Arabic & collection citations.\n"
+        "• `/dua [topic] [language]` - Search authentic Duas with Arabic text & source references.\n"
         "• `/dalil [topic] [language]` - Find evidence from Qur'an & Sunnah (Arabic + Translation + Citations).\n"
-        "• `/search [query] [language]` - Search live web references for Islamic studies.\n"
-        "• `/test` - Check Groq AI connection, latency, & system health.\n"
+        "• `/search [query] [language]` - Search live web references with cited sources.\n"
+        "• `/test` - Check Groq API connection, latency, & system health.\n"
         "• `/ping` - Check bot status and Discord latency.\n\n"
         "💡 *Verse Shortcut Tip:* Type verse numbers like `1:1-7` or `2:255` directly in chat to view Arabic text & translation!\n"
         "💡 *Language Tip:* Type any target language in the `language` field (e.g., *English*, *Arabic*, *Indonesian*, *Sundanese*) to force response in that language."
     )
     await interaction.response.send_message(guide_text)
 
-@bot.tree.command(name="ask", description="Ask anything about Islam (Explicit book citations included)")
+@bot.tree.command(name="ask", description="Ask anything about Islam (Arabic Dalil & Book Citations Included)")
 @app_commands.describe(
     prompt="Your question or topic",
     language="Optional: Type target response language (e.g., Sundanese, English, Arabic)"
@@ -257,7 +256,7 @@ async def slash_ask(
         final_prompt = (
             f"[{sender_name}]: {prompt}\n\n"
             f"VERIFIED SEARCH REFERENCES:\n{web_ref}\n\n"
-            f"[INSTRUCTION: Always explicitly cite the classical Fiqh/Tafsir book or scholar source for this answer.]"
+            f"[MANDATORY REQUIREMENT: You MUST include: (1) Relevant Arabic Dalil text with translation, and (2) Explicit classical/contemporary Fiqh or Tafsir book citation.]"
         )
         if language:
             final_prompt += f"\n\n[MANDATORY INSTRUCTION: Force and generate your ENTIRE response strictly in '{language}' language from start to finish.]"
@@ -288,7 +287,10 @@ async def slash_tafsir(
         prompt = (
             f"[{sender_name}]: Provide a comprehensive tafsir for verse {verse}.\n"
             f"Primary reference requested: {source if source else 'Tafsir Ibn Kathir / Jalalayn'}.\n"
-            f"MANDATORY REQUIREMENT: State the exact name of the Tafsir book used.\n\n"
+            f"MANDATORY REQUIREMENT:\n"
+            f"1. Original Arabic Quranic Verse\n"
+            f"2. Translation\n"
+            f"3. Detailed Tafsir Explanation with explicit Book Title citation\n\n"
             f"VERIFIED SEARCH REFERENCES:\n{web_ref}"
         )
         if language:
@@ -299,7 +301,7 @@ async def slash_tafsir(
     except Exception as e:
         await interaction.followup.send(f"⚠️ An error occurred: {e}")
 
-@bot.tree.command(name="fiqh", description="Ask Fiqh rulings with kitāb sources (Powered by GPT-OSS 120B)")
+@bot.tree.command(name="fiqh", description="Ask Fiqh rulings with Arabic Dalil & Kitāb sources")
 @app_commands.describe(
     question="Your jurisprudence (Fiqh) question",
     madhhab="Select Madhhab perspective",
@@ -327,12 +329,14 @@ async def slash_fiqh(
         sender_name = interaction.user.display_name
         chosen_madhhab = madhhab.value if madhhab else "comparative_all"
         
-        search_query = f"fiqh ruling kitab {question} madhhab {chosen_madhhab}"
+        search_query = f"fiqh ruling dalil kitab {question} madhhab {chosen_madhhab}"
         web_ref = await asyncio.to_thread(cari_web, search_query)
         
         prompt = (
             f"[{sender_name}]: Fiqh Question: '{question}'. Requested Madhhab: {chosen_madhhab.upper()}.\n"
-            f"MANDATORY REQUIREMENT: Cite the specific Fiqh book or classical scholar source for this ruling.\n\n"
+            f"MANDATORY REQUIREMENT:\n"
+            f"1. Provide Arabic Dalil (Quran/Hadith Matan) with translation.\n"
+            f"2. Cite the specific Fiqh book (e.g. Al-Majmu', Fiqh al-Sunnah) or classical Madhhab source.\n\n"
             f"VERIFIED SEARCH REFERENCES:\n{web_ref}"
         )
         if language:
@@ -343,7 +347,7 @@ async def slash_fiqh(
     except Exception as e:
         await interaction.followup.send(f"⚠️ An error occurred: {e}")
 
-@bot.tree.command(name="hadith", description="Search authentic Hadiths with original Arabic text & citations")
+@bot.tree.command(name="hadith", description="Search authentic Hadiths with Arabic Matan & Collection Citations")
 @app_commands.describe(
     topic="Hadith topic or keyword",
     book="Optional: Hadith Collection (Bukhari, Muslim, Abu Dawud, etc.)",
@@ -366,7 +370,7 @@ async def slash_hadith(
             f"MANDATORY FORMAT:\n"
             f"1. Original Arabic Matan Text\n"
             f"2. Complete Translation\n"
-            f"3. Exact Collection & Book Citation (e.g., HR. Bukhari No. xxx / Sahih Muslim)\n\n"
+            f"3. Exact Collection Citation (e.g., HR. Bukhari No. xxx / Sahih Muslim)\n\n"
             f"VERIFIED SEARCH REFERENCES:\n{web_ref}"
         )
         if language:
@@ -377,7 +381,7 @@ async def slash_hadith(
     except Exception as e:
         await interaction.followup.send(f"⚠️ An error occurred: {e}")
 
-@bot.tree.command(name="dua", description="Search authentic Duas and Adhkar")
+@bot.tree.command(name="dua", description="Search authentic Duas and Adhkar with Arabic Text & Sources")
 @app_commands.describe(
     topic="Topic or situation for the Dua",
     language="Optional: Type target response language (e.g., Sundanese, English, Arabic)"
@@ -395,7 +399,10 @@ async def slash_dua(
         
         prompt = (
             f"[{sender_name}]: Provide authentic Duas for topic/situation: '{topic}'.\n"
-            f"Provide: Original Arabic text, transliteration, translation, and kitāb/hadith reference source.\n\n"
+            f"MANDATORY FORMAT:\n"
+            f"1. Original Arabic Text\n"
+            f"2. Transliteration & Translation\n"
+            f"3. Hadith / Adhkar Book Source Citation\n\n"
             f"VERIFIED SEARCH REFERENCES:\n{web_ref}"
         )
         if language:
@@ -426,7 +433,7 @@ async def slash_dalil(
             f"[{sender_name}]: Provide authentic Dalil (Qur'an verses and Sahih Hadiths) for topic: '{topic}'.\n"
             f"MANDATORY FORMAT:\n"
             f"1. Original Arabic Text\n"
-            f"2. Translation\n"
+            f"2. Complete Translation\n"
             f"3. Explicit Reference Source & Kitāb Name (Surah name/number or Hadith Collection)\n\n"
             f"VERIFIED SEARCH REFERENCES:\n{web_ref}"
         )
@@ -438,7 +445,7 @@ async def slash_dalil(
     except Exception as e:
         await interaction.followup.send(f"⚠️ An error occurred: {e}")
 
-@bot.tree.command(name="search", description="Search Islamic research references from the web")
+@bot.tree.command(name="search", description="Search Islamic research references from the web with citations")
 @app_commands.describe(
     query="Search keywords",
     language="Optional: Type target response language (e.g., Sundanese, English, Arabic)"
@@ -452,7 +459,11 @@ async def slash_search(
     try:
         sender_name = interaction.user.display_name
         web_data = await asyncio.to_thread(cari_web, query)
-        full_prompt = f"[{sender_name}]: Use the following web references to answer and cite the source books:\n\nREFERENCES:\n{web_data}\n\nQUESTION: {query}"
+        full_prompt = (
+            f"[{sender_name}]: Use the following web references to answer.\n"
+            f"MANDATORY REQUIREMENT: Provide Arabic Dalil and cite explicit sources:\n\n"
+            f"REFERENCES:\n{web_data}\n\nQUESTION: {query}"
+        )
         if language:
             full_prompt += f"\n\n[MANDATORY INSTRUCTION: Force and generate your ENTIRE response strictly in '{language}' language.]"
             
@@ -475,7 +486,7 @@ async def slash_test(interaction: discord.Interaction):
             f"🟢 **Groq API Status:** Connected & Active\n"
             f"⚡ **API Latency:** `{api_latency}ms`\n"
             f"📡 **Discord Ping:** `{discord_ping}ms`\n"
-            f"🧠 **Active Engine:** 70B Cited RAG (`llama-3.3-70b-versatile`)\n\n"
+            f"🧠 **Active Engine:** Mandatory Dalil & Source Cited RAG (`llama-3.3-70b-versatile`)\n\n"
             f"💬 **Output Test Sample:**\n> {respon}"
         )
         await interaction.followup.send(status_msg)
@@ -485,7 +496,7 @@ async def slash_test(interaction: discord.Interaction):
 @bot.tree.command(name="ping", description="Check bot latency status")
 async def slash_ping(interaction: discord.Interaction):
     latency = round(bot.latency * 1000)
-    await interaction.response.send_message(f"🏓 **Pong!** Islamic.AI latency: `{latency}ms` (Source Citation Active)")
+    await interaction.response.send_message(f"🏓 **Pong!** Islamic.AI latency: `{latency}ms` (Strict Dalil & Citation Active)")
 
 if __name__ == "__main__":
     if not DISCORD_TOKEN:
