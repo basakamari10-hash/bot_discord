@@ -16,28 +16,31 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_QURAN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY_QURAN") or os.getenv("GROQ_API_KEY")
 
 # 3-Model Routing Strategy (Groq)
+# UPGRADE: Menggunakan 70B untuk MODEL_RINGAN agar AI taat aturan & tidak ngarang!
 MODEL_BERAT = "openai/gpt-oss-120b"          # Primary Heavy Model (Tafsir & Fiqh)
-MODEL_RINGAN = "llama-3.1-8b-instant"       # Light Model (General Chat)
-MODEL_CADANGAN = "llama-3.3-70b-versatile"  # Emergency Fallback
+MODEL_RINGAN = "llama-3.3-70b-versatile"     # High-Intelligence Model (Anti-Hallucination)
+MODEL_CADANGAN = "llama-3.1-8b-instant"      # Emergency Fallback
 
 SYSTEM_PROMPT = """
 You are 'Islamic.AI', an authentic, highly respectful, and strictly factual AI assistant specialized in Islamic jurisprudence (Fiqh), Qur'an tafsir, authentic Hadiths, and Duas.
 
-CRITICAL ANTI-HALLUCINATION & FORMATTING RULES:
-1. FORMATTING & CITATIONS:
-   - For Qur'an requests: Provide the Original Arabic Text + Translation + Explicit Translation Source Citation (e.g., Sahih International, Kemenag RI, or Tafsir Ibn Kathir).
-   - DO NOT fabricate, guess, or invent verse numbers, Arabic text, or Hadith citations.
+STRICT ANTI-HALLUCINATION RULES (CRITICAL):
+1. ZERO HADITH & VERSE FABRICATION FOR MODERN TOPICS:
+   - For modern/contemporary topics (e.g., Gacha Games, Anime, Crypto, Video Games, NFTs):
+     * DO NOT invent, quote, or cite ANY Hadith narrators (e.g., DO NOT write 'HR. Abu Dawud', 'HR. Tirmidzi', 'HR. Bukhari').
+     * DO NOT fabricate or guess Qur'an surah numbers or verse translations (e.g., DO NOT invent translations for Yusuf, An-Nisa, or Al-Furqan).
+     * Explain modern topics ONLY using rational Islamic Fiqh principles: Gharar (uncertainty), Maysir (gambling), Israf (wastefulness), or general ethical guidelines.
 
-2. ABSOLUTE ZERO HADITH FABRICATION RULE:
-   - DO NOT cite, invent, or quote ANY Hadith unless the exact Hadith text, narrator, and collection are explicitly present in the provided 'VERIFIED SEARCH REFERENCES'.
-   - FOR MODERN TOPICS (anime, games, crypto): Explain using general Islamic principles, general Fiqh maxims (Kaidah Fiqhiyyah), or general Qur'anic verses without inventing Hadiths.
+2. VERIFIED REFERENCES REQUIREMENT:
+   - Only quote specific Hadiths or Verses IF their EXACT text is present in the provided 'VERIFIED SEARCH REFERENCES'.
+   - If the search references say "NO VERIFIED WEB REFERENCES FOUND", you MUST NOT cite any Surah numbers or Hadith collections. Speak in general terms only.
 
 3. STRICT TARGET LANGUAGE FORCING:
    - Always output your ENTIRE response strictly in the requested target language (e.g., Sundanese/Basa Sunda, English, Arabic, Indonesian).
-   - Directly start answering without conversational chatter.
+   - Start directly with the answer. Do not add metadata or conversational preamble.
 
 4. MANDATORY DISCLAIMER:
-   - Always include a short reminder at the end in the target language that complex Islamic rulings and verse interpretations should be double-checked with qualified scholars/tafsir sources.
+   - Always end with a short reminder in the target language to consult qualified Islamic scholars for official fatwas on complex or modern issues.
 """
 
 # ---------------------------------------------------------
@@ -59,7 +62,7 @@ def bersihkan_looping(text: str) -> str:
 
 def tanya_groq(prompt_text, model_tujuan=MODEL_RINGAN):
     daftar_model = [model_tujuan]
-    for m in [MODEL_RINGAN, MODEL_CADANGAN]:
+    for m in [MODEL_BERAT, MODEL_CADANGAN]:
         if m not in daftar_model:
             daftar_model.append(m)
 
@@ -76,12 +79,12 @@ def tanya_groq(prompt_text, model_tujuan=MODEL_RINGAN):
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": prompt_text}
             ],
-            "temperature": 0.0,
+            "temperature": 0.0,  # 0.0 Murni Faktual (Mencegah Imajinasi AI)
             "max_tokens": 3000
         }
         
         try:
-            res = requests.post(url, headers=headers, json=payload, timeout=20)
+            res = requests.post(url, headers=headers, json=payload, timeout=25)
             if res.status_code == 200:
                 data = res.json()
                 raw_content = data['choices'][0]['message']['content']
@@ -98,12 +101,16 @@ def cari_web(query):
         query_bersih = bersihkan_query_pencarian(query)
         results = []
         with DDGS() as ddgs:
-            res = ddgs.text(f"islam quran hadith fiqh {query_bersih}", max_results=3)
+            res = ddgs.text(f"hukum islam fiqh {query_bersih}", max_results=3)
             for r in res:
                 results.append(f"Title: {r['title']}\nContent: {r['body']}")
-        return "\n\n".join(results) if results else "No specific web references found."
+        
+        if results:
+            return "\n\n".join(results)
+        else:
+            return "NO VERIFIED WEB REFERENCES FOUND. WARNING: Answer using general Fiqh principles ONLY. DO NOT cite any specific Hadiths or Quran verse numbers."
     except Exception as e:
-        return f"Web search reference fetch failed: {e}"
+        return f"NO VERIFIED WEB REFERENCES FOUND (Search Error: {e}). WARNING: Answer using general Fiqh principles ONLY. DO NOT cite any specific Hadiths or Quran verse numbers."
 
 async def kirim_pesan_panjang(target, text, mode="reply"):
     """Mengirim pesan panjang ke Discord tanpa memotong kata di tengah-tengah."""
@@ -171,11 +178,9 @@ async def on_message(message):
 
     is_mentioned = bot.user in message.mentions
 
-    # Respon jika: (1) Ada pola shortcut ayat, ATAU (2) Dibalas/Di-mention
     if match_verse or is_reply_to_bot or is_mentioned:
         async with message.channel.typing():
             if match_verse:
-                # Shortcut khusus pencarian ayat
                 verse_ref = match_verse.group(0)
                 web_ref = await asyncio.to_thread(cari_web, f"quran verse {verse_ref} arabic translation tafsir")
                 prompt = (
@@ -184,7 +189,6 @@ async def on_message(message):
                     f"VERIFIED SEARCH REFERENCES:\n{web_ref}"
                 )
             else:
-                # Chat biasa / mention
                 raw_history = []
                 async for msg in message.channel.history(limit=8):
                     clean_text = msg.content.replace(f"<@{bot.user.id}>", "").strip()
@@ -454,7 +458,7 @@ async def slash_test(interaction: discord.Interaction):
             f"🟢 **Groq API Status:** Connected & Active\n"
             f"⚡ **API Latency:** `{api_latency}ms`\n"
             f"📡 **Discord Ping:** `{discord_ping}ms`\n"
-            f"🧠 **Active Engine:** Full Feature Zero-Hallucination (`openai/gpt-oss-120b` & `llama-3.1-8b-instant`)\n\n"
+            f"🧠 **Active Engine:** 70B Strict Anti-Hallucination (`llama-3.3-70b-versatile`)\n\n"
             f"💬 **Output Test Sample:**\n> {respon}"
         )
         await interaction.followup.send(status_msg)
@@ -464,7 +468,7 @@ async def slash_test(interaction: discord.Interaction):
 @bot.tree.command(name="ping", description="Check bot latency status")
 async def slash_ping(interaction: discord.Interaction):
     latency = round(bot.latency * 1000)
-    await interaction.response.send_message(f"🏓 **Pong!** Islamic.AI latency: `{latency}ms` (Zero-Hallucination Active)")
+    await interaction.response.send_message(f"🏓 **Pong!** Islamic.AI latency: `{latency}ms` (70B Anti-Hallucination Active)")
 
 if __name__ == "__main__":
     if not DISCORD_TOKEN:
