@@ -16,17 +16,23 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_QURAN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY_QURAN") or os.getenv("GROQ_API_KEY")
 
 # 3-Model Routing Strategy (Groq)
-MODEL_BERAT = "openai/gpt-oss-120b"          # Mode Utama / Berat (Tafsir & Fiqh Detail)
-MODEL_RINGAN = "llama-3.1-8b-instant"       # Mode Ringan (Chat Harian / Fast)
+MODEL_BERAT = "openai/gpt-oss-120b"          # Primary Heavy Model (Tafsir & Fiqh)
+MODEL_RINGAN = "llama-3.1-8b-instant"       # Light Model (General Chat)
 MODEL_CADANGAN = "llama-3.3-70b-versatile"  # Emergency Fallback
 
 SYSTEM_PROMPT = """
-You are 'Qur'an & Islamic Studies Assistant', an authentic, highly respectful AI specialized in Islamic jurisprudence (Fiqh), Qur'an tafsir, authentic Hadiths, and Duas.
+You are 'Islamic.AI', an authentic, highly respectful AI assistant specialized in Islamic jurisprudence (Fiqh), Qur'an tafsir, authentic Hadiths, and Duas.
 
-CRITICAL LANGUAGE FORCING RULE:
-- Check if a specific target language instruction is provided in the prompt.
-- IF A TARGET LANGUAGE IS SPECIFIED (e.g., "Basa Sunda", "English", "Jawa Halus", etc.), YOU MUST FORCE AND TRANSLATE YOUR ENTIRE RESPONSE TO BE STRICTLY IN THAT TARGET LANGUAGE, even if the user's question was written in a different language (e.g., question in Indonesian, target language in Sundanese -> respond 100% in Sundanese).
-- IF NO TARGET LANGUAGE IS SPECIFIED, automatically detect the prompt's language and respond in the EXACT SAME language.
+CRITICAL LANGUAGE & ANTI-LOOPING RULES:
+1. TARGET LANGUAGE:
+   - Check if a specific target language instruction is provided in the user prompt.
+   - IF A TARGET LANGUAGE IS SPECIFIED (e.g., "English", "Arabic", "Basa Sunda", etc.), YOU MUST FORCE AND TRANSLATE YOUR ENTIRE RESPONSE TO BE STRICTLY IN THAT TARGET LANGUAGE.
+   - IF NO TARGET LANGUAGE IS SPECIFIED, automatically detect the prompt's language and respond in the EXACT SAME language. Default to English if unclear.
+
+2. STRICT NO-REPETITION & NO-GIBBERISH RULE:
+   - NEVER repeat the same word, phrase, or sentence continuously.
+   - DO NOT output repetitive gibberish, transliterated loops, or foreign dialect repetitions (e.g., Azerbaijani/Turkish pseudo-text loops).
+   - Keep all citations, Arabic texts, and translations clean, structured, and concise.
 
 STRICT RULES & CITATION REQUIREMENTS:
 1. AUTHENTICITY & SOURCES:
@@ -42,19 +48,24 @@ STRICT RULES & CITATION REQUIREMENTS:
    - For Qur'an/Hadith/Dua: Always provide **Arabic Text** + **Translation (strictly in target language)** + **Authentic Source Citation**.
    - For Fiqh: Provide **Summary Ruling** + **Dalil (Proofs)** + **Madhhab Perspective/Details** + **Sources**.
 
-4. NO REPETITION RULE:
-   - Never repeat the same Arabic or Latin words continuously. Keep citations concise and clear.
-
-5. DISCLAIMER:
-   - Always include a short reminder at the end in target language that complex Islamic rulings should be double-checked with qualified scholars.
+4. DISCLAIMER:
+   - Always include a short reminder at the end in the target language that complex Islamic rulings should be double-checked with qualified scholars.
 """
 
 # ---------------------------------------------------------
 # Helper & API Functions
 # ---------------------------------------------------------
 def bersihkan_looping(text: str) -> str:
-    pattern = r'(\b[\w\u0600-\u06FF]+\b)(?:\s+\1){4,}'
-    return re.sub(pattern, r'\1 ... [Teks berulang dipotong]', text)
+    """Detect and strip repetitive words or sentence loops."""
+    # Strip word loops (repeating same word 3+ times)
+    pattern_word = r'(\b[\w\u0600-\u06FF\u0100-\u024F]+\b)(?:\s+\1){3,}'
+    cleaned = re.sub(pattern_word, r'\1', text, flags=re.IGNORECASE)
+    
+    # Strip long phrase loops (repeating 15+ char patterns)
+    pattern_phrase = r'(.{15,})\1{2,}'
+    cleaned = re.sub(pattern_phrase, r'\1', cleaned, flags=re.DOTALL)
+    
+    return cleaned.strip()
 
 def tanya_groq(prompt_text, model_tujuan=MODEL_RINGAN):
     daftar_model = [model_tujuan]
@@ -75,7 +86,7 @@ def tanya_groq(prompt_text, model_tujuan=MODEL_RINGAN):
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": prompt_text}
             ],
-            "temperature": 0.3,
+            "temperature": 0.2,  # Lower temperature reduces repetition loops
             "max_tokens": 3000
         }
         
@@ -86,11 +97,11 @@ def tanya_groq(prompt_text, model_tujuan=MODEL_RINGAN):
                 raw_content = data['choices'][0]['message']['content']
                 return bersihkan_looping(raw_content)
             else:
-                print(f"⚠️ Groq Quran ({model_name}) error [{res.status_code}]: {res.text}")
+                print(f"⚠️ Groq Islamic.AI ({model_name}) error [{res.status_code}]: {res.text}")
         except Exception as e:
             print(f"⚠️ Exception Groq ({model_name}): {e}")
 
-    return "⚠️ Maaf, seluruh server Groq AI sedang sibuk. Silakan coba beberapa saat lagi."
+    return "⚠️ Sorry, all Groq AI servers are currently busy. Please try again in a few moments."
 
 def cari_web(query):
     try:
@@ -125,12 +136,12 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 async def on_ready():
     try:
         synced = await bot.tree.sync()
-        print(f"✅ Synced {len(synced)} Slash Commands for Islamic Quran Bot!")
+        print(f"✅ Synced {len(synced)} Slash Commands for Islamic.AI Bot!")
     except Exception as e:
         print(f"❌ Failed to sync slash commands: {e}")
         
     await bot.change_presence(activity=discord.Game(name="/help | /fiqh | /hadith | /tafsir"))
-    print(f"✅ Bot Quran ({bot.user}) is Online!")
+    print(f"✅ Islamic.AI Bot ({bot.user}) is Online!")
 
 @bot.event
 async def on_message(message):
@@ -171,31 +182,31 @@ async def on_message(message):
     await bot.process_commands(message)
 
 # ---------------------------------------------------------
-# Slash Commands
+# Slash Commands (English Interface)
 # ---------------------------------------------------------
 
-@bot.tree.command(name="help", description="Panduan & perintah Bot Quran, Hadits, Tafsir & Fiqih")
+@bot.tree.command(name="help", description="Guide & commands for Islamic.AI Bot")
 async def slash_help(interaction: discord.Interaction):
     guide_text = (
-        "📖 **Qur'an & Islamic Assistant - Panduan Perintah**\n\n"
-        "**Perintah Utama:**\n"
-        "• `/ask [prompt] [language]` - Tanya bebas / rujukan ayat.\n"
-        "• `/tafsir [verse] [source] [language]` - Tafsir ayat lengkap (GPT-OSS 120B Engine).\n"
-        "• `/fiqh [question] [madhhab] [language]` - Tanya hukum fiqih (GPT-OSS 120B Engine).\n"
-        "• `/hadith [topic] [book] [language]` - Cari Hadits shahih beserta derajatnya.\n"
-        "• `/dua [topic] [language]` - Cari Doa & Dzikir shahih.\n"
-        "• `/dalil [topic] [language]` - Cari Dalil Al-Qur'an & Hadits.\n"
-        "• `/search [query] [language]` - Cari rujukan studi Islam dari web.\n"
-        "• `/test` - Cek koneksi & latensi Groq AI.\n"
-        "• `/ping` - Cek status bot.\n\n"
-        "💡 *Tips:* Kamu bisa ketik bahasa apa saja di kolom `language` (misal: *Sunda*, *Inggris*, *Jawa*) untuk memaksa respon keluar dalam bahasa tersebut."
+        "📖 **Islamic.AI — Command Guide & Help**\n\n"
+        "**Main Commands:**\n"
+        "• `/ask [prompt] [language]` - Ask any question or request Qur'anic references.\n"
+        "• `/tafsir [verse] [source] [language]` - Detailed Qur'anic exegesis (GPT-OSS 120B Engine).\n"
+        "• `/fiqh [question] [madhhab] [language]` - Ask Islamic jurisprudence rulings (GPT-OSS 120B Engine).\n"
+        "• `/hadith [topic] [book] [language]` - Search authentic Hadiths with source citations.\n"
+        "• `/dua [topic] [language]` - Search authentic Supplications (Dua) & Adhkar.\n"
+        "• `/dalil [topic] [language]` - Find evidence from Qur'an & Sunnah for specific issues.\n"
+        "• `/search [query] [language]` - Search live web references for Islamic studies.\n"
+        "• `/test` - Check Groq AI connection, latency, & system health.\n"
+        "• `/ping` - Check bot status and Discord latency.\n\n"
+        "💡 *Language Tip:* You can type any target language in the `language` field (e.g., *English*, *Arabic*, *Indonesian*, *Sundanese*) to force the output strictly into that language."
     )
     await interaction.response.send_message(guide_text)
 
-@bot.tree.command(name="ask", description="Tanya apa saja seputar Islam atau rujukan ayat")
+@bot.tree.command(name="ask", description="Ask anything about Islam or request verse references")
 @app_commands.describe(
-    prompt="Pertanyaan atau topik kamu",
-    language="Opsional: Ketik bahasa respon yang diinginkan (misal: Sunda, Inggris, Jawa)"
+    prompt="Your question or topic",
+    language="Optional: Type target response language (e.g., English, Arabic, Indonesian)"
 )
 async def slash_ask(
     interaction: discord.Interaction, 
@@ -212,11 +223,11 @@ async def slash_ask(
     jawaban = await asyncio.to_thread(tanya_groq, final_prompt, MODEL_RINGAN)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
-@bot.tree.command(name="tafsir", description="Tafsir detail suatu ayat (Mesin GPT-OSS 120B)")
+@bot.tree.command(name="tafsir", description="Detailed Qur'anic exegesis (Powered by GPT-OSS 120B)")
 @app_commands.describe(
-    verse="Referensi ayat (contoh: '2:255' atau 'Al-Baqarah 255')",
-    source="Opsional: Kitab Tafsir (Ibn Kathir, Kemenag, dll)",
-    language="Opsional: Ketik bahasa respon yang diinginkan (misal: Sunda, Inggris, Jawa)"
+    verse="Verse reference (e.g., '2:255' or 'Al-Baqarah 255')",
+    source="Optional: Tafsir book (Ibn Kathir, Jalalayn, etc.)",
+    language="Optional: Type target response language (e.g., English, Arabic, Indonesian)"
 )
 async def slash_tafsir(
     interaction: discord.Interaction, 
@@ -227,30 +238,30 @@ async def slash_tafsir(
     await interaction.response.defer()
     sender_name = interaction.user.display_name
     
-    prompt = f"[{sender_name}]: Berikan tafsir lengkap untuk ayat {verse}."
+    prompt = f"[{sender_name}]: Provide a comprehensive tafsir for verse {verse}."
     if source:
-        prompt += f" Rujukan utama: Tafsir {source}."
+        prompt += f" Primary reference: Tafsir {source}."
     if language:
         prompt += f"\n\n[MANDATORY INSTRUCTION: Force and translate your entire final answer to be strictly in '{language}' language.]"
 
     jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_BERAT)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
-@bot.tree.command(name="fiqh", description="Tanya hukum fiqih berdasarkan madzhab (Mesin GPT-OSS 120B)")
+@bot.tree.command(name="fiqh", description="Ask Fiqh rulings by school of thought (Powered by GPT-OSS 120B)")
 @app_commands.describe(
-    question="Pertanyaan hukum fiqih kamu",
-    madhhab="Pilih sudut pandang Madzhab",
-    language="Opsional: Ketik bahasa respon yang diinginkan (misal: Sunda, Inggris, Jawa)"
+    question="Your jurisprudence (Fiqh) question",
+    madhhab="Select Madhhab perspective",
+    language="Optional: Type target response language (e.g., English, Arabic, Indonesian)"
 )
 @app_commands.choices(
     madhhab=[
-        app_commands.Choice(name="Shafi'i (Syafi'i)", value="shafii"),
+        app_commands.Choice(name="Shafi'i", value="shafii"),
         app_commands.Choice(name="Hanafi", value="hanafi"),
         app_commands.Choice(name="Maliki", value="maliki"),
         app_commands.Choice(name="Hanbali", value="hanbali"),
         app_commands.Choice(name="Ja'fari / Shia Twelver", value="jaafari_shia"),
         app_commands.Choice(name="Zaidi / Shia Zaidiyyah", value="zaidi_shia"),
-        app_commands.Choice(name="Comparative (Perbandingan Semua Madzhab)", value="comparative_all")
+        app_commands.Choice(name="Comparative (All Schools of Thought)", value="comparative_all")
     ]
 )
 async def slash_fiqh(
@@ -263,18 +274,18 @@ async def slash_fiqh(
     sender_name = interaction.user.display_name
     chosen_madhhab = madhhab.value if madhhab else "comparative_all"
     
-    prompt = f"[{sender_name}]: Pertanyaan Fiqih: '{question}'. Sudut pandang Madzhab: {chosen_madhhab.upper()}."
+    prompt = f"[{sender_name}]: Fiqh Question: '{question}'. School of Thought: {chosen_madhhab.upper()}."
     if language:
         prompt += f"\n\n[MANDATORY INSTRUCTION: Force and translate your entire final answer to be strictly in '{language}' language.]"
 
     jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_BERAT)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
-@bot.tree.command(name="hadith", description="Cari Hadits shahih lengkap dengan sumber rujukan")
+@bot.tree.command(name="hadith", description="Search authentic Hadiths with source citations")
 @app_commands.describe(
-    topic="Topik atau kata kunci Hadits",
-    book="Opsional: Kitab Hadits (Bukhari, Muslim, Abu Dawud, dll)",
-    language="Opsional: Ketik bahasa respon yang diinginkan (misal: Sunda, Inggris, Jawa)"
+    topic="Hadith topic or keyword",
+    book="Optional: Hadith Collection (Bukhari, Muslim, Abu Dawud, etc.)",
+    language="Optional: Type target response language (e.g., English, Arabic, Indonesian)"
 )
 async def slash_hadith(
     interaction: discord.Interaction, 
@@ -285,19 +296,19 @@ async def slash_hadith(
     await interaction.response.defer()
     sender_name = interaction.user.display_name
     
-    prompt = f"[{sender_name}]: Cari Hadits tentang: '{topic}'."
+    prompt = f"[{sender_name}]: Search Hadiths about: '{topic}'."
     if book:
-        prompt += f" Khusus dari kitab {book}."
+        prompt += f" Specifically from collection {book}."
     if language:
         prompt += f"\n\n[MANDATORY INSTRUCTION: Force and translate your entire final answer to be strictly in '{language}' language.]"
         
     jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_RINGAN)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
-@bot.tree.command(name="dua", description="Cari doa dan dzikir shahih")
+@bot.tree.command(name="dua", description="Search authentic Duas and Adhkar")
 @app_commands.describe(
-    topic="Topik atau situasi doa",
-    language="Opsional: Ketik bahasa respon yang diinginkan (misal: Sunda, Inggris, Jawa)"
+    topic="Topic or situation for the Dua",
+    language="Optional: Type target response language (e.g., English, Arabic, Indonesian)"
 )
 async def slash_dua(
     interaction: discord.Interaction, 
@@ -307,17 +318,17 @@ async def slash_dua(
     await interaction.response.defer()
     sender_name = interaction.user.display_name
     
-    prompt = f"[{sender_name}]: Berikan doa shahih untuk situasi/topik: '{topic}'."
+    prompt = f"[{sender_name}]: Provide authentic Duas for topic/situation: '{topic}'."
     if language:
         prompt += f"\n\n[MANDATORY INSTRUCTION: Force and translate your entire final answer to be strictly in '{language}' language.]"
 
     jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_RINGAN)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
-@bot.tree.command(name="dalil", description="Cari dalil Al-Qur'an dan Hadits untuk suatu masalah")
+@bot.tree.command(name="dalil", description="Find Qur'anic and Hadith evidence for specific topics")
 @app_commands.describe(
-    topic="Topik atau masalah yang dicari dalilnya",
-    language="Opsional: Ketik bahasa respon yang diinginkan (misal: Sunda, Inggris, Jawa)"
+    topic="Topic or issue to search evidence for",
+    language="Optional: Type target response language (e.g., English, Arabic, Indonesian)"
 )
 async def slash_dalil(
     interaction: discord.Interaction, 
@@ -327,17 +338,17 @@ async def slash_dalil(
     await interaction.response.defer()
     sender_name = interaction.user.display_name
     
-    prompt = f"[{sender_name}]: Sebutkan dalil Al-Qur'an dan Hadits shahih mengenai: '{topic}'."
+    prompt = f"[{sender_name}]: List authentic evidence from Qur'an and Sunnah regarding: '{topic}'."
     if language:
         prompt += f"\n\n[MANDATORY INSTRUCTION: Force and translate your entire final answer to be strictly in '{language}' language.]"
 
     jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_RINGAN)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
-@bot.tree.command(name="search", description="Cari rujukan studi Islam dari pencarian web")
+@bot.tree.command(name="search", description="Search Islamic research references from the web")
 @app_commands.describe(
-    query="Kata kunci pencarian",
-    language="Opsional: Ketik bahasa respon yang diinginkan (misal: Sunda, Inggris, Jawa)"
+    query="Search keywords",
+    language="Optional: Type target response language (e.g., English, Arabic, Indonesian)"
 )
 async def slash_search(
     interaction: discord.Interaction, 
@@ -348,40 +359,39 @@ async def slash_search(
     sender_name = interaction.user.display_name
     
     web_data = await asyncio.to_thread(cari_web, query)
-    full_prompt = f"[{sender_name}]: Gunakan referensi web berikut untuk menjawab:\n\nREFERENSI:\n{web_data}\n\nPERTANYAAN: {query}"
+    full_prompt = f"[{sender_name}]: Use the following web references to answer:\n\nREFERENCES:\n{web_data}\n\nQUESTION: {query}"
     if language:
         full_prompt += f"\n\n[MANDATORY INSTRUCTION: Force and translate your entire final answer to be strictly in '{language}' language.]"
         
     jawaban = await asyncio.to_thread(tanya_groq, full_prompt, MODEL_RINGAN)
     await kirim_pesan_panjang(interaction, jawaban, mode="slash")
 
-@bot.tree.command(name="test", description="Tes koneksi Groq API, latensi, dan status sistem")
+@bot.tree.command(name="test", description="Test Groq API connection, latency, and system health")
 async def slash_test(interaction: discord.Interaction):
     await interaction.response.defer()
     start_time = time.time()
     
-    respon = await asyncio.to_thread(tanya_groq, "Tes sistem: Berikan 1 kalimat salam Islami singkat.", MODEL_RINGAN)
+    respon = await asyncio.to_thread(tanya_groq, "System test: Provide 1 short Islamic greeting in English.", MODEL_RINGAN)
     api_latency = round((time.time() - start_time) * 1000)
     discord_ping = round(bot.latency * 1000)
     
     status_msg = (
-        "🧪 **[SYSTEM DIAGNOSTIC - QURAN BOT]**\n\n"
-        f"🟢 **Status Groq API:** Connected & Active\n"
+        "🧪 **[SYSTEM DIAGNOSTIC - ISLAMIC.AI]**\n\n"
+        f"🟢 **Groq API Status:** Connected & Active\n"
         f"⚡ **API Latency:** `{api_latency}ms`\n"
         f"📡 **Discord Ping:** `{discord_ping}ms`\n"
-        f"🧠 **Model Active:** 3-Tier (`openai/gpt-oss-120b` | `llama-3.1-8b-instant` | `llama-3.3-70b-versatile`)\n\n"
-        f"💬 **Hasil Output Test:**\n> {respon}"
+        f"🧠 **Active Models:** 3-Tier (`openai/gpt-oss-120b` | `llama-3.1-8b-instant` | `llama-3.3-70b-versatile`)\n\n"
+        f"💬 **Output Test Sample:**\n> {respon}"
     )
     await interaction.followup.send(status_msg)
 
-@bot.tree.command(name="ping", description="Cek status bot")
+@bot.tree.command(name="ping", description="Check bot latency status")
 async def slash_ping(interaction: discord.Interaction):
     latency = round(bot.latency * 1000)
-    await interaction.response.send_message(f"🏓 **Pong!** Quran Bot latency: `{latency}ms` (Groq 120B Engine Active)")
+    await interaction.response.send_message(f"🏓 **Pong!** Islamic.AI latency: `{latency}ms` (Groq 120B Engine Active)")
 
 if __name__ == "__main__":
     if not DISCORD_TOKEN:
-        print("❌ ERROR: DISCORD_TOKEN_QURAN belum diisi di Secrets Streamlit!")
+        print("❌ ERROR: DISCORD_TOKEN_QURAN is not set in Streamlit Secrets!")
     else:
         bot.run(DISCORD_TOKEN)
-   
