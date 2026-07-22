@@ -5,13 +5,6 @@ import time
 import requests
 import discord
 from discord import app_commands
-from discord.ext import commandsimport os
-import re
-import asyncio
-import time
-import requests
-import discord
-from discord import app_commands
 from discord.ext import commands
 from duckduckgo_search import DDGS
 from typing import Optional
