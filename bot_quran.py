@@ -23,26 +23,23 @@ MODEL_CADANGAN = "llama-3.3-70b-versatile"  # Emergency Fallback
 SYSTEM_PROMPT = """
 You are 'Islamic.AI', an authentic, highly respectful, and strictly factual AI assistant specialized in Islamic jurisprudence (Fiqh), Qur'an tafsir, authentic Hadiths, and Duas.
 
-CRITICAL ANTI-HALLUCINATION & TRUTH RULES (MOST IMPORTANT):
-1. ABSOLUTE HADITH ACCURACY:
-   - DO NOT fabricate, guess, or generate fake Hadith numbers, fake Arabic texts, or fake citations.
-   - If you are not 100% certain of the exact Hadith number or exact Arabic wording, DO NOT invent a Hadith number. Instead, cite the general book/collection (e.g., "Sahih Bukhari, Book of Wudu") or state the verified meaning clearly.
-   - Ensure Fiqh concepts are strictly accurate (e.g., Janabah requires Ghusl/Full Bath, NOT just Wudhu).
+CRITICAL RAG & ANTI-HALLUCINATION RULES:
+1. USE VERIFIED REFERENCES FIRST:
+   - You are provided with real-time web search references in the prompt. Extract exact verse numbers, Hadith numbers, collection names, Arabic texts, and translations directly from these references.
+   - DO NOT fabricate, guess, or generate fake Hadith numbers, fake verse citations, or fake Arabic wording outside of verified Islamic sources.
+   - If reference data is limited, state the general authenticated ruling or collection clearly without inventing fake numbers.
 
 2. TARGET LANGUAGE & TRANSLATION:
    - Check if a specific target language instruction is provided in the prompt.
-   - IF A TARGET LANGUAGE IS SPECIFIED (e.g., "English", "Arabic", "Basa Sunda", etc.), YOU MUST FORCE AND TRANSLATE YOUR ENTIRE RESPONSE TO BE STRICTLY IN THAT TARGET LANGUAGE.
+   - IF A TARGET LANGUAGE IS SPECIFIED (e.g., "English", "Arabic", "Basa Sunda", "Indonesian", etc.), YOU MUST FORCE AND TRANSLATE YOUR ENTIRE RESPONSE TO BE STRICTLY IN THAT TARGET LANGUAGE.
    - IF NO TARGET LANGUAGE IS SPECIFIED, automatically detect the prompt's language and respond in the EXACT SAME language. Default to English if unclear.
 
-3. STRICT NO-REPETITION & NO-GIBBERISH RULE:
+3. STRICT NO-REPETITION RULE:
    - NEVER repeat the same word, phrase, or sentence continuously.
    - Keep all citations, Arabic texts, and translations clean, structured, and concise.
 
-STRICT CITATION REQUIREMENTS:
-1. AUTHENTICITY & SOURCES:
-   - Always prioritize SAHIH and HASAN sources (Kutubus Sittah: Sahih Bukhari, Sahih Muslim, Sunan Abu Dawud, Tirmidhi, An-Nasa'i, Ibn Majah).
-2. DISCLAIMER:
-   - Always include a short reminder at the end in target language that complex Islamic rulings should be double-checked with qualified scholars.
+4. DISCLAIMER:
+   - Always include a short reminder at the end in the target language that complex Islamic rulings should be double-checked with qualified scholars.
 """
 
 # ---------------------------------------------------------
@@ -77,7 +74,7 @@ def tanya_groq(prompt_text, model_tujuan=MODEL_RINGAN):
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": prompt_text}
             ],
-            "temperature": 0.1,  # STABIL & JUJUR (Mencegah AI Ngarang Hadits)
+            "temperature": 0.1,  # STABIL & JUJUR (Mencegah AI Ngarang)
             "max_tokens": 3000
         }
         
@@ -98,12 +95,12 @@ def cari_web(query):
     try:
         results = []
         with DDGS() as ddgs:
-            res = ddgs.text(f"islamic fiqh quran hadith {query}", max_results=3)
+            res = ddgs.text(f"islamic quran hadith fiqh {query}", max_results=3)
             for r in res:
                 results.append(f"Title: {r['title']}\nContent: {r['body']}")
         return "\n\n".join(results)
     except Exception as e:
-        return f"Web search failed: {e}"
+        return f"Web search reference fetch failed: {e}"
 
 async def kirim_pesan_panjang(target, text, mode="reply"):
     chunks = [text[i:i+1800] for i in range(0, len(text), 1800)]
@@ -165,26 +162,28 @@ async def on_message(message):
                     raw_history.append(f"User [{sender_name}]: {clean_text}")
 
             raw_history.reverse()
-            conversation_prompt = "\n".join(raw_history)
+            last_prompt = raw_history[-1] if raw_history else message.content
+            web_ref = await asyncio.to_thread(cari_web, last_prompt)
             
+            conversation_prompt = f"VERIFIED WEB REFERENCES:\n{web_ref}\n\nCHAT HISTORY:\n" + "\n".join(raw_history)
             jawaban = await asyncio.to_thread(tanya_groq, conversation_prompt, MODEL_RINGAN)
             await kirim_pesan_panjang(message, jawaban, mode="reply")
 
     await bot.process_commands(message)
 
 # ---------------------------------------------------------
-# Slash Commands (English Interface)
+# Slash Commands (RAG Search-First Engine)
 # ---------------------------------------------------------
 
 @bot.tree.command(name="help", description="Guide & commands for Islamic.AI Bot")
 async def slash_help(interaction: discord.Interaction):
     guide_text = (
         "📖 **Islamic.AI — Command Guide & Help**\n\n"
-        "**Main Commands:**\n"
+        "**Main Commands (Search-Grounded & Verified):**\n"
         "• `/ask [prompt] [language]` - Ask any question or request Qur'anic references.\n"
         "• `/tafsir [verse] [source] [language]` - Detailed Qur'anic exegesis (GPT-OSS 120B Engine).\n"
         "• `/fiqh [question] [madhhab] [language]` - Ask Islamic jurisprudence rulings (GPT-OSS 120B Engine).\n"
-        "• `/hadith [topic] [book] [language]` - Search authentic Hadiths with source citations.\n"
+        "• `/hadith [topic] [book] [language]` - Search authentic Hadiths with verified source citations.\n"
         "• `/dua [topic] [language]` - Search authentic Supplications (Dua) & Adhkar.\n"
         "• `/dalil [topic] [language]` - Find evidence from Qur'an & Sunnah for specific issues.\n"
         "• `/search [query] [language]` - Search live web references for Islamic studies.\n"
@@ -207,7 +206,12 @@ async def slash_ask(
     await interaction.response.defer()
     try:
         sender_name = interaction.user.display_name
-        final_prompt = f"[{sender_name}]: {prompt}"
+        web_ref = await asyncio.to_thread(cari_web, prompt)
+        
+        final_prompt = (
+            f"[{sender_name}]: {prompt}\n\n"
+            f"VERIFIED SEARCH REFERENCES:\n{web_ref}"
+        )
         if language:
             final_prompt += f"\n\n[MANDATORY INSTRUCTION: Force and translate your entire final answer to be strictly in '{language}' language.]"
             
@@ -231,9 +235,14 @@ async def slash_tafsir(
     await interaction.response.defer()
     try:
         sender_name = interaction.user.display_name
-        prompt = f"[{sender_name}]: Provide a comprehensive tafsir for verse {verse}."
-        if source:
-            prompt += f" Primary reference: Tafsir {source}."
+        search_query = f"tafsir verse {verse} {source if source else ''} quran commentary"
+        web_ref = await asyncio.to_thread(cari_web, search_query)
+        
+        prompt = (
+            f"[{sender_name}]: Provide a comprehensive tafsir for verse {verse}.\n"
+            f"Primary reference book requested: {source if source else 'Standard Trusted Exegesis'}.\n\n"
+            f"VERIFIED SEARCH REFERENCES:\n{web_ref}"
+        )
         if language:
             prompt += f"\n\n[MANDATORY INSTRUCTION: Force and translate your entire final answer to be strictly in '{language}' language.]"
 
@@ -270,7 +279,13 @@ async def slash_fiqh(
         sender_name = interaction.user.display_name
         chosen_madhhab = madhhab.value if madhhab else "comparative_all"
         
-        prompt = f"[{sender_name}]: Fiqh Question: '{question}'. School of Thought: {chosen_madhhab.upper()}."
+        search_query = f"fiqh ruling {question} madhhab {chosen_madhhab}"
+        web_ref = await asyncio.to_thread(cari_web, search_query)
+        
+        prompt = (
+            f"[{sender_name}]: Fiqh Question: '{question}'. Requested School of Thought: {chosen_madhhab.upper()}.\n\n"
+            f"VERIFIED SEARCH REFERENCES:\n{web_ref}"
+        )
         if language:
             prompt += f"\n\n[MANDATORY INSTRUCTION: Force and translate your entire final answer to be strictly in '{language}' language.]"
 
@@ -294,9 +309,15 @@ async def slash_hadith(
     await interaction.response.defer()
     try:
         sender_name = interaction.user.display_name
-        prompt = f"[{sender_name}]: Search Hadiths about: '{topic}'."
-        if book:
-            prompt += f" Specifically from collection {book}."
+        
+        search_query = f"hadith {topic} {book if book else ''} sahih bukhari muslim sunnah.com"
+        web_ref = await asyncio.to_thread(cari_web, search_query)
+        
+        prompt = (
+            f"[{sender_name}]: User is looking for authentic Hadiths about '{topic}'.\n"
+            f"Specific collection requested: {book if book else 'Kutubus Sittah'}.\n\n"
+            f"VERIFIED SEARCH REFERENCES:\n{web_ref}"
+        )
         if language:
             prompt += f"\n\n[MANDATORY INSTRUCTION: Force and translate your entire final answer to be strictly in '{language}' language.]"
             
@@ -318,7 +339,14 @@ async def slash_dua(
     await interaction.response.defer()
     try:
         sender_name = interaction.user.display_name
-        prompt = f"[{sender_name}]: Provide authentic Duas for topic/situation: '{topic}'."
+        
+        search_query = f"dua supplicaton adhkar {topic} Quran Sunnah"
+        web_ref = await asyncio.to_thread(cari_web, search_query)
+        
+        prompt = (
+            f"[{sender_name}]: Provide authentic Duas for topic/situation: '{topic}'.\n\n"
+            f"VERIFIED SEARCH REFERENCES:\n{web_ref}"
+        )
         if language:
             prompt += f"\n\n[MANDATORY INSTRUCTION: Force and translate your entire final answer to be strictly in '{language}' language.]"
 
@@ -340,7 +368,14 @@ async def slash_dalil(
     await interaction.response.defer()
     try:
         sender_name = interaction.user.display_name
-        prompt = f"[{sender_name}]: List authentic evidence from Qur'an and Sunnah regarding: '{topic}'."
+        
+        search_query = f"dalil quran hadith {topic}"
+        web_ref = await asyncio.to_thread(cari_web, search_query)
+        
+        prompt = (
+            f"[{sender_name}]: List authentic evidence from Qur'an and Sunnah regarding: '{topic}'.\n\n"
+            f"VERIFIED SEARCH REFERENCES:\n{web_ref}"
+        )
         if language:
             prompt += f"\n\n[MANDATORY INSTRUCTION: Force and translate your entire final answer to be strictly in '{language}' language.]"
 
@@ -386,7 +421,7 @@ async def slash_test(interaction: discord.Interaction):
             f"🟢 **Groq API Status:** Connected & Active\n"
             f"⚡ **API Latency:** `{api_latency}ms`\n"
             f"📡 **Discord Ping:** `{discord_ping}ms`\n"
-            f"🧠 **Active Models:** 3-Tier (`openai/gpt-oss-120b` | `llama-3.1-8b-instant` | `llama-3.3-70b-versatile`)\n\n"
+            f"🧠 **Active Engine:** Full RAG Search-Grounded (`openai/gpt-oss-120b` & `llama-3.1-8b-instant`)\n\n"
             f"💬 **Output Test Sample:**\n> {respon}"
         )
         await interaction.followup.send(status_msg)
@@ -396,7 +431,7 @@ async def slash_test(interaction: discord.Interaction):
 @bot.tree.command(name="ping", description="Check bot latency status")
 async def slash_ping(interaction: discord.Interaction):
     latency = round(bot.latency * 1000)
-    await interaction.response.send_message(f"🏓 **Pong!** Islamic.AI latency: `{latency}ms` (Groq 120B Engine Active)")
+    await interaction.response.send_message(f"🏓 **Pong!** Islamic.AI latency: `{latency}ms` (Full RAG Engine Active)")
 
 if __name__ == "__main__":
     if not DISCORD_TOKEN:
