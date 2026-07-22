@@ -1,4 +1,4 @@
 streamlit
-discord.py>=2.3.2
+discord.py
 requests
-duckduckgo-search>=6.0.0
+duckduckgo-search
