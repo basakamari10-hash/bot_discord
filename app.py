@@ -1,57 +1,139 @@
 import os
-import re
-import asyncio
-import time
+import sys
+import subprocess
 import requests
-import discord
-from discord import app_commands
-from discord.ext import commands
-from duckduckgo_search import DDGS
-from typing import Optional
+import streamlit as st
+
+# Setup Halaman
+st.set_page_config(page_title="Discord Bot Hub & AI Tester", page_icon="🤖", layout="wide")
+
+st.title("🤖 Discord Multi-Bot Host & Live Testing Hub")
+st.write("Aplikasi ini menjalankan Bot Discord 24/7 di latar belakang sekaligus menyediakan **Live Chat Box** untuk mengetes AI secara langsung.")
+
+# 1. Salin Secrets Streamlit ke Environment Variables sistem
+try:
+    for key, value in st.secrets.items():
+        os.environ[str(key)] = str(value)
+except Exception as e:
+    st.warning(f"Peringatan Secrets: {e}")
+
+# 2. Spawn Subprocess Bot Discord (Hanya 1x secara Global)
+@st.cache_resource
+def start_bots():
+    print("🚀 Memulai subprocess Bot Persona (Shion)...")
+    p1 = subprocess.Popen([sys.executable, "bot_persona.py"])
+    
+    print("🚀 Memulai subprocess Bot Quran...")
+    p2 = subprocess.Popen([sys.executable, "bot_quran.py"])
+    
+    return p1, p2
+
+bot_persona_proc, bot_quran_proc = start_bots()
+
+# 3. Status Monitoring Process
+st.subheader("📊 Status Server Discord Bot:")
+col1, col2 = st.columns(2)
+
+with col1:
+    if bot_persona_proc.poll() is None:
+        st.success(f"🟢 **Bot Persona (Shion)**: Running (PID: {bot_persona_proc.pid})")
+    else:
+        st.error(f"🔴 **Bot Persona**: Stopped (Exit Code: {bot_persona_proc.poll()})")
+
+with col2:
+    if bot_quran_proc.poll() is None:
+        st.success(f"🟢 **Bot Quran**: Running (PID: {bot_quran_proc.pid})")
+    else:
+        st.error(f"🔴 **Bot Quran**: Stopped (Exit Code: {bot_quran_proc.poll()})")
+
+st.divider()
 
 # ---------------------------------------------------------
-# Token & API Configuration
+# 4. Live Chat Box Tester UI
 # ---------------------------------------------------------
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_QURAN")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY_QURAN") or os.getenv("GROQ_API_KEY")
+st.subheader("🧪 Live AI Tester (Langsung dari Web)")
+st.caption("Kamu bisa ngetes respon AI di bawah ini tanpa perlu nunggu atau panggil di Discord!")
 
-# 3-Model Routing Strategy
-MODEL_BERAT = "openai/gpt-oss-120b"          # Mode Utama / Berat (Tafsir & Fiqh Detail)
-MODEL_RINGAN = "llama-3.1-8b-instant"       # Mode Ringan (Chat Harian / Fast)
-MODEL_CADANGAN = "llama-3.3-70b-versatile"  # Emergency Fallback
+def tanya_groq_direct(prompt_text, system_prompt, api_key, model="llama-3.1-8b-instant"):
+    """Fungsi pemanggil Groq API ringan untuk Chat Box Streamlit."""
+    if not api_key:
+        return "❌ Error: API Key Groq belum disetting di Secrets Streamlit!"
+    
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt_text}
+        ],
+        "temperature": 0.7,
+        "max_tokens": 1500
+    }
+    try:
+        res = requests.post(url, headers=headers, json=payload, timeout=20)
+        if res.status_code == 200:
+            return res.json()['choices'][0]['message']['content']
+        else:
+            return f"❌ Error API [{res.status_code}]: {res.text}"
+    except Exception as e:
+        return f"❌ Exception: {e}"
 
-SYSTEM_PROMPT = """
-You are 'Qur'an & Islamic Studies Assistant', an authentic, highly respectful AI specialized in Islamic jurisprudence (Fiqh), Qur'an tafsir, authentic Hadiths, and Duas.
+# System Prompts & Keys
+PROMPT_QURAN = "You are 'Qur'an & Islamic Studies Assistant', an authentic, highly respectful AI specialized in Islamic jurisprudence (Fiqh), Qur'an tafsir, authentic Hadiths, and Duas."
+PROMPT_SHION = "Kamu adalah Shion, asisten virtual dengan kepribadian femboy yang imut, ramah, pemalu, dan sangat perhatian. Jawab dengan singkat, padat, dan jujur."
 
-CRITICAL LANGUAGE FORCING RULE:
-- Check if a specific target language instruction is provided in the prompt.
-- IF A TARGET LANGUAGE IS SPECIFIED (e.g., "Basa Sunda", "English", "Jawa Halus", etc.), YOU MUST FORCE AND TRANSLATE YOUR ENTIRE RESPONSE TO BE STRICTLY IN THAT TARGET LANGUAGE, even if the user's question was written in a different language (e.g., question in Indonesian, target language in Sundanese -> respond 100% in Sundanese).
-- IF NO TARGET LANGUAGE IS SPECIFIED, automatically detect the prompt's language and respond in the EXACT SAME language.
+KEY_QURAN = os.getenv("GROQ_API_KEY_QURAN") or os.getenv("GROQ_API_KEY")
+KEY_SHION = os.getenv("GROQ_API_KEY_PERSONA") or os.getenv("GROQ_API_KEY")
 
-STRICT RULES & CITATION REQUIREMENTS:
-1. AUTHENTICITY & SOURCES:
-   - Always prioritize SAHIH and HASAN sources (Kutubus Sittah: Sahih Bukhari, Sahih Muslim, Sunan Abu Dawud, Tirmidhi, An-Nasa'i, Ibn Majah).
-   - Explicitly cite the source, collector/author, and book/hadith/verse number whenever possible.
+tab1, tab2 = st.tabs(["📖 Test Bot Quran", "🌸 Test Bot Shion"])
 
-2. FIQH & MADZHAB GUIDELINES:
-   - When answering Fiqh questions, stick strictly to the requested Madhhab or specify clear differences if asked for comparative views.
-   - Respectful presentation of Sunni Madhhabs (Shafi'i, Hanafi, Maliki, Hanbali) and Shia Madhhabs (Ja'fari and Zaidi jurisprudence).
-   - Cite classical scholar opinions or authoritative fiqh references.
+# TAB 1: BOT QURAN TESTER
+with tab1:
+    if "messages_quran" not in st.session_state:
+        st.session_state.messages_quran = []
 
-3. FORMATTING STRUCTURE:
-   - For Qur'an/Hadith/Dua: Always provide **Arabic Text** + **Translation (strictly in target language)** + **Authentic Source Citation**.
-   - For Fiqh: Provide **Summary Ruling** + **Dalil (Proofs)** + **Madhhab Perspective/Details** + **Sources**.
+    # Tampilkan riwayat chat
+    for msg in st.session_state.messages_quran:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
 
-4. NO REPETITION RULE:
-   - Never repeat the same Arabic or Latin words continuously. Keep citations concise and clear.
+    # Input Chat
+    if user_input_quran := st.chat_input("Tanya seputar Al-Qur'an, Hadits, atau Fiqh...", key="chat_quran"):
+        st.session_state.messages_quran.append({"role": "user", "content": user_input_quran})
+        with st.chat_message("user"):
+            st.markdown(user_input_quran)
 
-5. DISCLAIMER:
-   - Always include a short reminder at the end in target language that complex Islamic rulings should be double-checked with qualified scholars.
-"""
+        with st.chat_message("assistant"):
+            with st.spinner("Bot Quran sedang memproses respon..."):
+                reply = tanya_groq_direct(user_input_quran, PROMPT_QURAN, KEY_QURAN)
+                st.markdown(reply)
+                st.session_state.messages_quran.append({"role": "assistant", "content": reply})
 
-# ---------------------------------------------------------
-# Helper & API Functions
-# ---------------------------------------------------------
+# TAB 2: BOT SHION TESTER
+with tab2:
+    if "messages_shion" not in st.session_state:
+        st.session_state.messages_shion = []
+
+    # Tampilkan riwayat chat
+    for msg in st.session_state.messages_shion:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    # Input Chat
+    if user_input_shion := st.chat_input("Sapa atau ajak ngobrol Shion...", key="chat_shion"):
+        st.session_state.messages_shion.append({"role": "user", "content": user_input_shion})
+        with st.chat_message("user"):
+            st.markdown(user_input_shion)
+
+        with st.chat_message("assistant"):
+            with st.spinner("Shion sedang mengetik balasan... 🌸"):
+                reply = tanya_groq_direct(user_input_shion, PROMPT_SHION, KEY_SHION)
+                st.markdown(reply)
+                st.session_state.messages_shion.append({"role": "assistant", "content": reply})
 def bersihkan_looping(text: str) -> str:
     pattern = r'(\b[\w\u0600-\u06FF]+\b)(?:\s+\1){4,}'
     return re.sub(pattern, r'\1 ... [Teks berulang dipotong]', text)
