@@ -222,7 +222,7 @@ async def slash_help(interaction: discord.Interaction):
         "• `/dua [topic] [language]` - Search authentic Supplications (Dua) & Adhkar.\n"
         "• `/dalil [topic] [language]` - Find evidence from Qur'an & Sunnah for specific issues.\n"
         "• `/search [query] [language]` - Search live web references for Islamic studies.\n"
-        "• `/test` - Check Groq AI connection, latency, & system health.\n"
+        "• `/test` - Check Groq API connection, latency, & system health.\n"
         "• `/ping` - Check bot status and Discord latency.\n\n"
         "💡 *Verse Shortcut Tip:* You can type verse numbers like `1:1-7` or `2:255` directly in chat to view Arabic text & translation!\n"
         "💡 *Language Tip:* Type any target language in the `language` field (e.g., *English*, *Arabic*, *Indonesian*, *Sundanese*) to force response in that language."
