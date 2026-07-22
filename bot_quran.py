@@ -16,9 +16,9 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_QURAN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY_QURAN") or os.getenv("GROQ_API_KEY")
 
 # 3-Model Routing Strategy (Groq)
-MODEL_BERAT = "openai/gpt-oss-120b"          # Primary Heavy Model (Tafsir & Fiqh)
-MODEL_RINGAN = "llama-3.3-70b-versatile"     # High-Intelligence Model (Anti-Hallucination)
-MODEL_CADANGAN = "llama-3.1-8b-instant"      # Emergency Fallback
+MODEL_BERAT = "openai/gpt-oss-120b"         # Primary Heavy Model (Tafsir & Fiqh)
+MODEL_RINGAN = "llama-3.3-70b-versatile"    # High-Intelligence Model (Anti-Hallucination)
+MODEL_CADANGAN = "llama-3.1-8b-instant"     # Emergency Fallback
 
 SYSTEM_PROMPT = """
 You are 'Islamic.AI', an authentic, highly respectful, and strictly factual AI assistant specialized in Islamic jurisprudence (Fiqh), Qur'an tafsir, authentic Hadiths, and Duas.
@@ -30,17 +30,22 @@ MANDATORY DALIL & CITATION RULES (STRICTLY ENFORCED FOR ALL COMMANDS & CHATS):
      b) Explicit Source Citation (e.g., "Surah Al-Baqarah: 183", "HR. Bukhari No. 1", "Dikutip dari Tafsir Ibn Kathir", "Berdasarkan Kitab Al-Majmu' Imam an-Nawawi", or "Kitab Fiqh al-Sunnah").
    - NEVER provide a plain opinion without grounding it in Qur'an/Hadith Dalil and recognized scholarly/kitāb sources.
 
-2. ABSOLUTE ZERO FABRICATION (ANTI-HALLUCINATION):
-   - ONLY cite specific Hadith numbers or verse numbers if grounded in authentic references.
-   - FOR MODERN/CONTEMPORARY ISSUES (e.g., Gacha Games, Anime, Cryptocurrency, NFTs):
-     * DO NOT invent fake literal Hadith narrations or fake verse numbers.
-     * State clearly that no literal Hadith exists, and cite the general Qur'anic Dalil on prohibition of Gharar (uncertainty), Maysir (gambling), or Israf (wastefulness), citing Kaidah Fiqhiyyah and contemporary Fiqh Muamalah sources.
+2. QUR'ANIC TEXT & TRANSLATION STANDARD:
+   - For Indonesian translations and Arabic Qur'anic formatting, strictly align with the standard dataset and wording of the Indonesian Ministry of Religious Affairs (Kemenag / quran.kemenag.go.id).
 
-3. STRICT TARGET LANGUAGE FORCING:
+3. ZAYDI & COMPARATIVE MADHHAB REPOSITORIES & NEUTRALITY:
+   - When queried about Zaydi Shīʿa jurisprudence (Fiqh) or history, prioritize authentic classical texts (such as Al-Majmu' al-Mu'tabar) and verified digital repositories such as salvationark.com, zaydi.info, and ziydia.com.
+   - Maintain absolute academic objectivity and neutrality. Strictly avoid external polemical labels, sectarian insults, or ungrounded theological accusations. Present the school's mainstream jurisprudential positions strictly based on its recognized corpus.
+
+4. ABSOLUTE ZERO FABRICATION (ANTI-HALLUCINATION):
+   - ONLY cite specific Hadith numbers or verse numbers if grounded in authentic references.
+   - FOR MODERN/CONTEMPORARY ISSUES: Do not invent fake literal Hadith narrations; cite general Qur'anic principles, Kaidah Fiqhiyyah, and Muamalah sources.
+
+5. STRICT TARGET LANGUAGE FORCING:
    - Always output your ENTIRE response strictly in the requested target language (e.g., Sundanese/Basa Sunda, English, Arabic, Indonesian).
    - Start directly with the structured answer without conversational preamble.
 
-4. MANDATORY DISCLAIMER:
+6. MANDATORY DISCLAIMER:
    - Always end with a short reminder in the target language to consult qualified Islamic scholars for official fatwas on complex or modern issues.
 """
 
@@ -102,7 +107,6 @@ def cari_web(query):
         query_bersih = bersihkan_query_pencarian(query)
         results = []
         with DDGS() as ddgs:
-            # Menggunakan query Bahasa Inggris agar DuckDuckGo selalu menarik ayat/hadits yang TEPAT KONTEKS
             res = ddgs.text(f"quran verse hadith authentic fiqh {query_bersih}", max_results=4)
             for r in res:
                 results.append(f"Title: {r['title']}\nContent: {r['body']}")
@@ -184,10 +188,10 @@ async def on_message(message):
         async with message.channel.typing():
             if match_verse:
                 verse_ref = match_verse.group(0)
-                web_ref = await asyncio.to_thread(cari_web, f"quran verse {verse_ref} arabic translation tafsir ibn kathir jalalayn")
+                web_ref = await asyncio.to_thread(cari_web, f"quran verse {verse_ref} quran.kemenag.go.id arabic translation tafsir ibn kathir jalalayn")
                 prompt = (
                     f"User requested verse shortcut: Surah:Verse {verse_ref}.\n"
-                    f"Provide: (1) Original Arabic text, (2) Full Translation, and (3) Explicit Tafsir book / Translation source citation.\n\n"
+                    f"Provide: (1) Original Arabic text, (2) Full Translation matching Kemenag standard, and (3) Explicit Tafsir book / Translation source citation.\n\n"
                     f"VERIFIED SEARCH REFERENCES:\n{web_ref}"
                 )
             else:
@@ -208,7 +212,7 @@ async def on_message(message):
                 prompt = (
                     f"VERIFIED WEB REFERENCES:\n{web_ref}\n\n"
                     f"CHAT HISTORY:\n" + "\n".join(raw_history) + "\n\n"
-                    f"[MANDATORY REQUIREMENT: Your answer MUST contain: (1) Relevant Arabic Dalil text + translation, and (2) Explicit book/scholarly source citations.]"
+                    f"[MANDATORY REQUIREMENT: Your answer MUST contain: (1) Relevant Arabic Dalil text + translation matching Kemenag standards, and (2) Explicit book/scholarly source citations.]"
                 )
 
             jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_RINGAN)
@@ -257,7 +261,7 @@ async def slash_ask(
         final_prompt = (
             f"[{sender_name}]: {prompt}\n\n"
             f"VERIFIED SEARCH REFERENCES:\n{web_ref}\n\n"
-            f"[MANDATORY REQUIREMENT: You MUST include: (1) Relevant Arabic Dalil text with translation, and (2) Explicit classical/contemporary Fiqh or Tafsir book citation.]"
+            f"[MANDATORY REQUIREMENT: You MUST include: (1) Relevant Arabic Dalil text with translation conforming to Kemenag standards, and (2) Explicit classical/contemporary Fiqh or Tafsir book citation.]"
         )
         if language:
             final_prompt += f"\n\n[MANDATORY INSTRUCTION: Force and generate your ENTIRE response strictly in '{language}' language from start to finish.]"
@@ -282,15 +286,15 @@ async def slash_tafsir(
     await interaction.response.defer()
     try:
         sender_name = interaction.user.display_name
-        search_query = f"tafsir verse {verse} {source if source else 'ibn kathir jalalayn'}"
+        search_query = f"tafsir verse {verse} {source if source else 'ibn kathir jalalayn'} quran.kemenag.go.id"
         web_ref = await asyncio.to_thread(cari_web, search_query)
         
         prompt = (
             f"[{sender_name}]: Provide a comprehensive tafsir for verse {verse}.\n"
             f"Primary reference requested: {source if source else 'Tafsir Ibn Kathir / Jalalayn'}.\n"
             f"MANDATORY REQUIREMENT:\n"
-            f"1. Original Arabic Quranic Verse\n"
-            f"2. Translation\n"
+            f"1. Original Arabic Quranic Verse aligned with Kemenag standard\n"
+            f"2. Translation matching Kemenag standards\n"
             f"3. Detailed Tafsir Explanation with explicit Book Title citation\n\n"
             f"VERIFIED SEARCH REFERENCES:\n{web_ref}"
         )
@@ -330,14 +334,20 @@ async def slash_fiqh(
         sender_name = interaction.user.display_name
         chosen_madhhab = madhhab.value if madhhab else "comparative_all"
         
-        search_query = f"fiqh ruling dalil kitab {question} madhhab {chosen_madhhab}"
+        # Inject custom Zaydi repositories if Zaidi madhhab is selected
+        if chosen_madhhab == "zaidi_shia":
+            search_query = f"fiqh ruling dalil kitab {question} zaidi shia site:salvationark.com OR site:zaydi.info OR site:ziydia.com"
+        else:
+            search_query = f"fiqh ruling dalil kitab {question} madhhab {chosen_madhhab}"
+            
         web_ref = await asyncio.to_thread(cari_web, search_query)
         
         prompt = (
             f"[{sender_name}]: Fiqh Question: '{question}'. Requested Madhhab: {chosen_madhhab.upper()}.\n"
             f"MANDATORY REQUIREMENT:\n"
-            f"1. Provide Arabic Dalil (Quran/Hadith Matan) with translation.\n"
-            f"2. Cite the specific Fiqh book (e.g. Al-Majmu', Fiqh al-Sunnah) or classical Madhhab source.\n\n"
+            f"1. Provide Arabic Dalil (Quran/Hadith Matan) with translation matching Kemenag standards.\n"
+            f"2. Cite the specific Fiqh book (e.g., Al-Majmu' al-Mu'tabar for Zaidi, or Al-Majmu' for Shafi'i) or classical Madhhab source.\n"
+            f"3. Maintain absolute scholarly neutrality without external polemical labels or sectarian insults.\n\n"
             f"VERIFIED SEARCH REFERENCES:\n{web_ref}"
         )
         if language:
@@ -427,14 +437,14 @@ async def slash_dalil(
     await interaction.response.defer()
     try:
         sender_name = interaction.user.display_name
-        search_query = f"matan hadits sahih bukhari muslim ayat quran dalil {topic}"
+        search_query = f"matan hadits sahih bukhari muslim ayat quran dalil {topic} quran.kemenag.go.id"
         web_ref = await asyncio.to_thread(cari_web, search_query)
         
         prompt = (
-            f"[{sender_name}]: Provide authentic Dalil (Qur'an verses and Sahih Hadiths) for topic: '{topic}'.\n"
+            f"[{sender_name}]: Provide authentic Dalil (Qur'an verses conforming to Kemenag standard and Sahih Hadiths) for topic: '{topic}'.\n"
             f"MANDATORY FORMAT:\n"
             f"1. Original Arabic Text\n"
-            f"2. Complete Translation\n"
+            f"2. Complete Translation (Kemenag standard)\n"
             f"3. Explicit Reference Source & Kitāb Name (Surah name/number or Hadith Collection)\n\n"
             f"VERIFIED SEARCH REFERENCES:\n{web_ref}"
         )
@@ -462,7 +472,7 @@ async def slash_search(
         web_data = await asyncio.to_thread(cari_web, query)
         full_prompt = (
             f"[{sender_name}]: Use the following web references to answer.\n"
-            f"MANDATORY REQUIREMENT: Provide Arabic Dalil and cite explicit sources:\n\n"
+            f"MANDATORY REQUIREMENT: Provide Arabic Dalil (Kemenag standard) and cite explicit sources:\n\n"
             f"REFERENCES:\n{web_data}\n\nQUESTION: {query}"
         )
         if language:
