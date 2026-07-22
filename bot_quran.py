@@ -59,46 +59,90 @@ MANDATORY DALIL & CITATION RULES (STRICTLY ENFORCED FOR ALL COMMANDS & CHATS):
 """
 
 # ---------------------------------------------------------
-# Quran Database Helper (JSON Grounding)
+# Quran Database Helper (Dual JSON Grounding: Arab + Translation)
 # ---------------------------------------------------------
 class QuranDB:
-    def __init__(self, json_path="quran_id.json"):
-        self.json_path = json_path
-        self.data = {}
+    def __init__(self, arabic_path="qpc-hafs.json", translation_path="english-wbw-translation.json"):
+        self.arabic_path = arabic_path
+        self.translation_path = translation_path
+        self.arabic_data = {}
+        self.translation_data = {}
         self.load_data()
 
     def load_data(self):
-        """Memuat file JSON ke RAM saat bot start."""
-        if os.path.exists(self.json_path):
+        """Memuat file Teks Arab dan File Terjemahan ke RAM."""
+        # 1. Load File Arab
+        if os.path.exists(self.arabic_path):
             try:
-                with open(self.json_path, "r", encoding="utf-8") as f:
-                    self.data = json.load(f)
-                print("✅ Database JSON Al-Qur'an berhasil dimuat!")
+                with open(self.arabic_path, "r", encoding="utf-8") as f:
+                    raw_ar = json.load(f)
+                self.arabic_data = self._parse_json(raw_ar)
+                print(f"✅ Teks Arab ({self.arabic_path}) berhasil dimuat!")
             except Exception as e:
-                print(f"❌ Gagal memuat file JSON Al-Qur'an: {e}")
+                print(f"❌ Gagal memuat file Arab: {e}")
         else:
-            print(f"⚠️ Warning: File '{self.json_path}' tidak ditemukan. Fitur JSON tidak aktif.")
+            print(f"⚠️ Warning: File Arab '{self.arabic_path}' tidak ditemukan!")
+
+        # 2. Load File Terjemahan Rujukan
+        if os.path.exists(self.translation_path):
+            try:
+                with open(self.translation_path, "r", encoding="utf-8") as f:
+                    raw_tr = json.load(f)
+                self.translation_data = self._parse_json(raw_tr)
+                print(f"✅ File Terjemahan ({self.translation_path}) berhasil dimuat!")
+            except Exception as e:
+                print(f"❌ Gagal memuat file Terjemahan: {e}")
+        else:
+            print(f"⚠️ Warning: File Terjemahan '{self.translation_path}' tidak ditemukan!")
+
+    def _parse_json(self, raw_data):
+        """Mendukung berbagai struktur JSON (Dict, List, Array, WBW)."""
+        parsed = {}
+        if isinstance(raw_data, dict):
+            for surah, verses in raw_data.items():
+                s_str = str(surah)
+                parsed[s_str] = {}
+                v_dict = verses.get("verses", verses) if isinstance(verses, dict) else {}
+                for ayah, content in v_dict.items():
+                    a_str = str(ayah)
+                    if isinstance(content, dict):
+                        parsed[s_str][a_str] = content.get("text") or content.get("ar") or content.get("tr") or str(content)
+                    elif isinstance(content, list):
+                        # Jika format Word-By-Word berupa list kata
+                        words = [w.get("text", str(w)) if isinstance(w, dict) else str(w) for w in content]
+                        parsed[s_str][a_str] = " ".join(words)
+                    else:
+                        parsed[s_str][a_str] = str(content)
+        elif isinstance(raw_data, list):
+            for item in raw_data:
+                s_str = str(item.get("surah") or item.get("surah_number") or item.get("chapter"))
+                a_str = str(item.get("ayah") or item.get("verse_number") or item.get("verse"))
+                text_val = item.get("text") or item.get("translation") or item.get("ar") or ""
+                if s_str not in parsed:
+                    parsed[s_str] = {}
+                parsed[s_str][a_str] = text_val
+        return parsed
 
     def get_verse(self, surah_num: int, ayah_num: int):
-        """Mengambil 1 ayat spesifik."""
-        surah_key = str(surah_num)
-        ayah_key = str(ayah_num)
+        """Mengambil teks Arab + Terjemahan Rujukan dari JSON."""
+        s_key = str(surah_num)
+        a_key = str(ayah_num)
+        
+        ar_text = self.arabic_data.get(s_key, {}).get(a_key, "")
+        tr_text = self.translation_data.get(s_key, {}).get(a_key, "")
 
-        if surah_key in self.data:
-            surah_info = self.data[surah_key]
-            verses = surah_info.get("verses", {})
-            if ayah_key in verses:
-                return {
-                    "surah_name": surah_info.get("name_latin", f"Surah {surah_num}"),
-                    "surah_num": surah_num,
-                    "ayah_num": ayah_num,
-                    "ar": verses[ayah_key].get("ar", ""),
-                    "id": verses[ayah_key].get("id", "")
-                }
+        if ar_text or tr_text:
+            return {
+                "surah_name": f"Surah {surah_num}",
+                "surah_num": surah_num,
+                "ayah_num": ayah_num,
+                "ar": ar_text,
+                "tr": tr_text
+            }
         return None
 
     def get_range(self, surah_num: int, start_ayah: int, end_ayah: int):
-        """Mengambil rentang ayat (misal: 1:1-7)."""
+        """Mengambil rentang ayat."""
         results = []
         for a in range(start_ayah, end_ayah + 1):
             v = self.get_verse(surah_num, a)
@@ -106,13 +150,16 @@ class QuranDB:
                 results.append(v)
         return results
 
-# Inisialisasi Database JSON Global
-quran_db = QuranDB("quran_id.json")
+# Inisialisasi Database Menggunakan 2 File JSON Milikmu
+quran_db = QuranDB(
+    arabic_path="qpc-hafs.json", 
+    translation_path="english-wbw-translation.json"
+)
 
 def ambil_konteks_quran_otomatis(teks_input: str) -> str:
     """
-    INSPEKTOR GLOBAL: Mendeteksi pola nomor ayat (misal '2:255' atau '1:1-7') dari input user di COMMAND APAPUN.
-    Mengambil data resmi Arab & Terjemahan Kemenag dari JSON lalu menyuntikkannya ke Prompt Groq.
+    INSPEKTOR GLOBAL: Mengambil teks Arab & Terjemahan Asli dari JSON, 
+    lalu menyuapkannya ke Groq sebagai rujukan utama penerjemahan.
     """
     matches = re.findall(r'\b(\d{1,3}):(\d{1,3})(?:-(\d{1,3}))?\b', teks_input)
     if not matches:
@@ -126,18 +173,21 @@ def ambil_konteks_quran_otomatis(teks_input: str) -> str:
         
         verses = quran_db.get_range(surah_num, start_ayah, end_ayah)
         if verses:
-            surah_name = verses[0]["surah_name"]
-            header = f"--- QS. {surah_name} [{surah_num}:{start_ayah}" + (f"-{end_ayah}] ---" if start_ayah != end_ayah else "] ---")
+            header = f"--- QS. Surah {surah_num}:{start_ayah}" + (f"-{end_ayah} ---" if start_ayah != end_ayah else " ---")
             details = []
             for v in verses:
-                details.append(f"Arabic Verse ({v['ayah_num']}): {v['ar']}\nIndonesian Translation ({v['ayah_num']}): {v['id']}")
+                details.append(
+                    f"Arabic Text ({v['ayah_num']}): {v['ar']}\n"
+                    f"Reference Translation File ({v['ayah_num']}): {v['tr']}"
+                )
             extracted_data.append(header + "\n" + "\n".join(details))
     
     if extracted_data:
         return (
-            "\n\n[OFFICIAL QURAN DATA INJECTED FROM LOCAL KEMENAG JSON DATABASE]\n"
-            "CRITICAL INSTRUCTION: If you quote the Quran for the references below, you MUST USE the EXACT Arabic text "
-            "and translation provided here verbatim. DO NOT rewrite or generate Quranic Arabic from memory.\n\n"
+            "\n\n[OFFICIAL QURAN DATA FROM LOCAL JSON FILES]\n"
+            "MANDATORY INSTRUCTIONS FOR GROQ:\n"
+            "1. ARABIC TEXT: Use the EXACT Arabic Quran text provided below verbatim from 'qpc-hafs.json'. DO NOT generate or alter Arabic Quranic text from memory.\n"
+            "2. TRANSLATION PROCESS: Use the 'Reference Translation File' provided below (from 'english-wbw-translation.json') as your primary ground truth reference. Translate and adapt this reference translation accurately and naturally into the user's target language.\n\n"
             + "\n\n".join(extracted_data) +
             "\n[END OF OFFICIAL QURAN DATA]\n"
         )
@@ -293,14 +343,14 @@ async def on_message(message):
             embed = discord.Embed(title=title_ref, color=discord.Color.gold())
             
             arab_texts = []
-            indo_texts = []
+            trans_texts = []
             for v in verses_data:
                 arab_texts.append(f"({v['ayah_num']}) {v['ar']}")
-                indo_texts.append(f"**[{v['ayah_num']}]** {v['id']}")
+                trans_texts.append(f"**[{v['ayah_num']}]** {v['tr']}")
 
-            embed.add_field(name="Teks Arab", value="\n".join(arab_texts)[:1024], inline=False)
-            embed.add_field(name="Terjemahan (Kemenag RI)", value="\n".join(indo_texts)[:1024], inline=False)
-            embed.set_footer(text="Sumber: Official Database Al-Qur'an Kemenag (Zero AI Hallucination)")
+            embed.add_field(name="Teks Arab (qpc-hafs.json)", value="\n".join(arab_texts)[:1024], inline=False)
+            embed.add_field(name="Terjemahan Rujukan (english-wbw)", value="\n".join(trans_texts)[:1024], inline=False)
+            embed.set_footer(text="Sumber: Official Local JSON Database (Zero AI Hallucination)")
             
             await message.reply(embed=embed)
             return
@@ -328,7 +378,7 @@ async def on_message(message):
                 f"VERIFIED WEB REFERENCES:\n{web_ref}\n\n"
                 f"{quran_ctx}\n"
                 f"CHAT HISTORY:\n" + "\n".join(raw_history) + "\n\n"
-                f"[MANDATORY REQUIREMENT: Your answer MUST contain: (1) Relevant Arabic Dalil text + translation matching Kemenag standards, and (2) Explicit book/scholarly source citations.]"
+                f"[MANDATORY REQUIREMENT: Your answer MUST contain: (1) Relevant Arabic Dalil text + translation matching official references, and (2) Explicit book/scholarly source citations.]"
             )
 
             jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_RINGAN)
@@ -337,7 +387,7 @@ async def on_message(message):
     await bot.process_commands(message)
 
 # ---------------------------------------------------------
-# Slash Commands (Setiap Command Memakai ambil_konteks_quran_otomatis)
+# Slash Commands
 # ---------------------------------------------------------
 
 @bot.tree.command(name="help", description="Guide & commands for Islamic.AI Bot")
@@ -345,7 +395,7 @@ async def slash_help(interaction: discord.Interaction):
     guide_text = (
         "📖 **Islamic.AI — Command Guide & Help**\n\n"
         "**Main Commands (Strictly Grounded with Dalil & Sources):**\n"
-        "• `/quran [surah] [ayat] [ayat_sampai]` - Fetch exact Arabic & Translation directly from Kemenag JSON Database (0% Hallucination).\n"
+        "• `/quran [surah] [ayat] [ayat_sampai]` - Fetch exact Arabic & Reference Translation directly from JSON Database (0% Hallucination).\n"
         "• `/ask [prompt] [language]` - Ask any question (Includes Arabic Dalil + Kitāb citations).\n"
         "• `/tafsir [verse] [source] [language]` - Detailed Qur'anic exegesis powered by JSON Data + AI.\n"
         "• `/fiqh [question] [madhhab] [language]` - Ask Fiqh rulings with Arabic Dalil & Fiqh book sources.\n"
@@ -360,7 +410,7 @@ async def slash_help(interaction: discord.Interaction):
     )
     await interaction.response.send_message(guide_text)
 
-@bot.tree.command(name="quran", description="Get exact Qur'an Arabic text and Kemenag translation directly from database")
+@bot.tree.command(name="quran", description="Get exact Qur'an Arabic text and reference translation directly from database")
 @app_commands.describe(
     surah="Nomor Surah (1-114)",
     ayat="Nomor Ayat",
@@ -387,14 +437,14 @@ async def slash_quran(
     embed = discord.Embed(title=title_ref, color=discord.Color.gold())
     
     arab_texts = []
-    indo_texts = []
+    trans_texts = []
     for v in verses:
         arab_texts.append(f"({v['ayah_num']}) {v['ar']}")
-        indo_texts.append(f"**[{v['ayah_num']}]** {v['id']}")
+        trans_texts.append(f"**[{v['ayah_num']}]** {v['tr']}")
 
-    embed.add_field(name="Teks Arab", value="\n".join(arab_texts)[:1024], inline=False)
-    embed.add_field(name="Terjemahan (Kemenag RI)", value="\n".join(indo_texts)[:1024], inline=False)
-    embed.set_footer(text="Sumber: Official Database Al-Qur'an Kemenag (Zero AI Hallucination)")
+    embed.add_field(name="Teks Arab (qpc-hafs.json)", value="\n".join(arab_texts)[:1024], inline=False)
+    embed.add_field(name="Terjemahan Rujukan (english-wbw)", value="\n".join(trans_texts)[:1024], inline=False)
+    embed.set_footer(text="Sumber: Official Local JSON Database (Zero AI Hallucination)")
 
     await interaction.followup.send(embed=embed)
 
@@ -418,7 +468,7 @@ async def slash_ask(
             f"[{sender_name}]: {prompt}\n\n"
             f"VERIFIED SEARCH REFERENCES:\n{web_ref}\n"
             f"{quran_ctx}\n"
-            f"[MANDATORY REQUIREMENT: You MUST include: (1) Relevant Arabic Dalil text with translation conforming to Kemenag standards, and (2) Explicit classical/contemporary Fiqh or Tafsir book citation.]"
+            f"[MANDATORY REQUIREMENT: You MUST include: (1) Relevant Arabic Dalil text with translation conforming to official standards, and (2) Explicit classical/contemporary Fiqh or Tafsir book citation.]"
         )
         if language:
             final_prompt += f"\n\n[MANDATORY INSTRUCTION: Force and generate your ENTIRE response strictly in '{language}' language from start to finish.]"
@@ -452,7 +502,7 @@ async def slash_tafsir(
             f"Primary reference requested: {source if source else 'Tafsir Ibn Kathir / Jalalayn'}.\n"
             f"{quran_ctx}\n"
             f"MANDATORY REQUIREMENT:\n"
-            f"1. Use the EXACT Arabic text and Translation provided in context above (DO NOT alter Arabic text).\n"
+            f"1. Use the EXACT Arabic text and Reference Translation provided in context above (DO NOT alter Arabic text).\n"
             f"2. Detailed Tafsir Explanation with explicit Book Title citation\n\n"
             f"VERIFIED SEARCH REFERENCES:\n{web_ref}"
         )
@@ -504,7 +554,7 @@ async def slash_fiqh(
             f"[{sender_name}]: Fiqh Question: '{question}'. Requested Madhhab: {chosen_madhhab.upper()}.\n"
             f"{quran_ctx}\n"
             f"MANDATORY REQUIREMENT:\n"
-            f"1. Provide Arabic Dalil (Quran/Hadith Matan) with translation matching Kemenag standards.\n"
+            f"1. Provide Arabic Dalil (Quran/Hadith Matan) with translation matching official standards.\n"
             f"2. Cite the specific Fiqh book (e.g., Al-Majmu' al-Mu'tabar for Zaidi, or Al-Majmu' for Shafi'i) or classical Madhhab source.\n"
             f"3. Maintain absolute scholarly neutrality without external polemical labels or sectarian insults.\n\n"
             f"VERIFIED SEARCH REFERENCES:\n{web_ref}"
@@ -605,11 +655,11 @@ async def slash_dalil(
         quran_ctx = ambil_konteks_quran_otomatis(topic) # INJEKSI OTOMATIS
         
         prompt = (
-            f"[{sender_name}]: Provide authentic Dalil (Qur'an verses conforming to Kemenag standard and Sahih Hadiths) for topic: '{topic}'.\n"
+            f"[{sender_name}]: Provide authentic Dalil (Qur'an verses conforming to official standards and Sahih Hadiths) for topic: '{topic}'.\n"
             f"{quran_ctx}\n"
             f"MANDATORY FORMAT:\n"
             f"1. Original Arabic Text\n"
-            f"2. Complete Translation (Kemenag standard)\n"
+            f"2. Complete Translation\n"
             f"3. Explicit Reference Source & Kitāb Name (Surah name/number or Hadith Collection)\n\n"
             f"VERIFIED SEARCH REFERENCES:\n{web_ref}"
         )
@@ -640,7 +690,7 @@ async def slash_search(
         full_prompt = (
             f"[{sender_name}]: Use the following web references to answer.\n"
             f"{quran_ctx}\n"
-            f"MANDATORY REQUIREMENT: Provide Arabic Dalil (Kemenag standard) and cite explicit sources:\n\n"
+            f"MANDATORY REQUIREMENT: Provide Arabic Dalil and cite explicit sources:\n\n"
             f"REFERENCES:\n{web_data}\n\nQUESTION: {query}"
         )
         if language:
@@ -660,15 +710,15 @@ async def slash_test(interaction: discord.Interaction):
         api_latency = round((time.time() - start_time) * 1000)
         discord_ping = round(bot.latency * 1000)
         
-        db_status = "Connected & Loaded" if quran_db.data else "Not Loaded (Fallback Active)"
+        db_status = "Connected & Loaded" if quran_db.arabic_data else "Not Loaded (Fallback Active)"
 
         status_msg = (
             "🧪 **[SYSTEM DIAGNOSTIC - ISLAMIC.AI]**\n\n"
             f"🟢 **Groq API Status:** Connected & Active\n"
-            f"📖 **Quran JSON Database:** `{db_status}`\n"
+            f"📖 **Quran Dual JSON Database:** `{db_status}`\n"
             f"⚡ **API Latency:** `{api_latency}ms`\n"
             f"📡 **Discord Ping:** `{discord_ping}ms`\n"
-            f"🧠 **Active Engine:** Global JSON Grounding RAG (`llama-3.3-70b-versatile`)\n\n"
+            f"🧠 **Active Engine:** Global Dual-JSON Grounding RAG (`llama-3.3-70b-versatile`)\n\n"
             f"💬 **Output Test Sample:**\n> {respon}"
         )
         await interaction.followup.send(status_msg)
@@ -678,7 +728,7 @@ async def slash_test(interaction: discord.Interaction):
 @bot.tree.command(name="ping", description="Check bot latency status")
 async def slash_ping(interaction: discord.Interaction):
     latency = round(bot.latency * 1000)
-    await interaction.response.send_message(f"🏓 **Pong!** Islamic.AI latency: `{latency}ms` (Global JSON Injection Active)")
+    await interaction.response.send_message(f"🏓 **Pong!** Islamic.AI latency: `{latency}ms` (Dual JSON Grounding Active)")
 
 if __name__ == "__main__":
     if not DISCORD_TOKEN:
