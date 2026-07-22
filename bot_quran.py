@@ -50,11 +50,9 @@ STRICT CITATION REQUIREMENTS:
 # ---------------------------------------------------------
 def bersihkan_looping(text: str) -> str:
     """Detect and strip repetitive words or sentence loops."""
-    # Strip word loops (repeating same word 3+ times)
     pattern_word = r'(\b[\w\u0600-\u06FF\u0100-\u024F]+\b)(?:\s+\1){3,}'
     cleaned = re.sub(pattern_word, r'\1', text, flags=re.IGNORECASE)
     
-    # Strip long phrase loops (repeating 15+ char patterns)
     pattern_phrase = r'(.{15,})\1{2,}'
     cleaned = re.sub(pattern_phrase, r'\1', cleaned, flags=re.DOTALL)
     
@@ -73,15 +71,14 @@ def tanya_groq(prompt_text, model_tujuan=MODEL_RINGAN):
     }
 
     for model_name in daftar_model:
-       payload = {
-    "model": model_name,
-    "messages": [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": prompt_text}
-    ],
-    "temperature": 0.1,  # STABIL & JUJUR (Mencegah AI Ngarang Hadits)
-    "max_tokens": 3000
-}
+        payload = {
+            "model": model_name,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": prompt_text}
+            ],
+            "temperature": 0.1,  # STABIL & JUJUR (Mencegah AI Ngarang Hadits)
+            "max_tokens": 3000
         }
         
         try:
@@ -208,14 +205,16 @@ async def slash_ask(
     language: Optional[str] = None
 ):
     await interaction.response.defer()
-    sender_name = interaction.user.display_name
-    
-    final_prompt = f"[{sender_name}]: {prompt}"
-    if language:
-        final_prompt += f"\n\n[MANDATORY INSTRUCTION: Force and translate your entire final answer to be strictly in '{language}' language.]"
-        
-    jawaban = await asyncio.to_thread(tanya_groq, final_prompt, MODEL_RINGAN)
-    await kirim_pesan_panjang(interaction, jawaban, mode="slash")
+    try:
+        sender_name = interaction.user.display_name
+        final_prompt = f"[{sender_name}]: {prompt}"
+        if language:
+            final_prompt += f"\n\n[MANDATORY INSTRUCTION: Force and translate your entire final answer to be strictly in '{language}' language.]"
+            
+        jawaban = await asyncio.to_thread(tanya_groq, final_prompt, MODEL_RINGAN)
+        await kirim_pesan_panjang(interaction, jawaban, mode="slash")
+    except Exception as e:
+        await interaction.followup.send(f"⚠️ An error occurred: {e}")
 
 @bot.tree.command(name="tafsir", description="Detailed Qur'anic exegesis (Powered by GPT-OSS 120B)")
 @app_commands.describe(
@@ -230,16 +229,18 @@ async def slash_tafsir(
     language: Optional[str] = None
 ):
     await interaction.response.defer()
-    sender_name = interaction.user.display_name
-    
-    prompt = f"[{sender_name}]: Provide a comprehensive tafsir for verse {verse}."
-    if source:
-        prompt += f" Primary reference: Tafsir {source}."
-    if language:
-        prompt += f"\n\n[MANDATORY INSTRUCTION: Force and translate your entire final answer to be strictly in '{language}' language.]"
+    try:
+        sender_name = interaction.user.display_name
+        prompt = f"[{sender_name}]: Provide a comprehensive tafsir for verse {verse}."
+        if source:
+            prompt += f" Primary reference: Tafsir {source}."
+        if language:
+            prompt += f"\n\n[MANDATORY INSTRUCTION: Force and translate your entire final answer to be strictly in '{language}' language.]"
 
-    jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_BERAT)
-    await kirim_pesan_panjang(interaction, jawaban, mode="slash")
+        jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_BERAT)
+        await kirim_pesan_panjang(interaction, jawaban, mode="slash")
+    except Exception as e:
+        await interaction.followup.send(f"⚠️ An error occurred: {e}")
 
 @bot.tree.command(name="fiqh", description="Ask Fiqh rulings by school of thought (Powered by GPT-OSS 120B)")
 @app_commands.describe(
@@ -265,15 +266,18 @@ async def slash_fiqh(
     language: Optional[str] = None
 ):
     await interaction.response.defer()
-    sender_name = interaction.user.display_name
-    chosen_madhhab = madhhab.value if madhhab else "comparative_all"
-    
-    prompt = f"[{sender_name}]: Fiqh Question: '{question}'. School of Thought: {chosen_madhhab.upper()}."
-    if language:
-        prompt += f"\n\n[MANDATORY INSTRUCTION: Force and translate your entire final answer to be strictly in '{language}' language.]"
+    try:
+        sender_name = interaction.user.display_name
+        chosen_madhhab = madhhab.value if madhhab else "comparative_all"
+        
+        prompt = f"[{sender_name}]: Fiqh Question: '{question}'. School of Thought: {chosen_madhhab.upper()}."
+        if language:
+            prompt += f"\n\n[MANDATORY INSTRUCTION: Force and translate your entire final answer to be strictly in '{language}' language.]"
 
-    jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_BERAT)
-    await kirim_pesan_panjang(interaction, jawaban, mode="slash")
+        jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_BERAT)
+        await kirim_pesan_panjang(interaction, jawaban, mode="slash")
+    except Exception as e:
+        await interaction.followup.send(f"⚠️ An error occurred: {e}")
 
 @bot.tree.command(name="hadith", description="Search authentic Hadiths with source citations")
 @app_commands.describe(
@@ -288,16 +292,18 @@ async def slash_hadith(
     language: Optional[str] = None
 ):
     await interaction.response.defer()
-    sender_name = interaction.user.display_name
-    
-    prompt = f"[{sender_name}]: Search Hadiths about: '{topic}'."
-    if book:
-        prompt += f" Specifically from collection {book}."
-    if language:
-        prompt += f"\n\n[MANDATORY INSTRUCTION: Force and translate your entire final answer to be strictly in '{language}' language.]"
-        
-    jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_RINGAN)
-    await kirim_pesan_panjang(interaction, jawaban, mode="slash")
+    try:
+        sender_name = interaction.user.display_name
+        prompt = f"[{sender_name}]: Search Hadiths about: '{topic}'."
+        if book:
+            prompt += f" Specifically from collection {book}."
+        if language:
+            prompt += f"\n\n[MANDATORY INSTRUCTION: Force and translate your entire final answer to be strictly in '{language}' language.]"
+            
+        jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_RINGAN)
+        await kirim_pesan_panjang(interaction, jawaban, mode="slash")
+    except Exception as e:
+        await interaction.followup.send(f"⚠️ An error occurred: {e}")
 
 @bot.tree.command(name="dua", description="Search authentic Duas and Adhkar")
 @app_commands.describe(
@@ -310,14 +316,16 @@ async def slash_dua(
     language: Optional[str] = None
 ):
     await interaction.response.defer()
-    sender_name = interaction.user.display_name
-    
-    prompt = f"[{sender_name}]: Provide authentic Duas for topic/situation: '{topic}'."
-    if language:
-        prompt += f"\n\n[MANDATORY INSTRUCTION: Force and translate your entire final answer to be strictly in '{language}' language.]"
+    try:
+        sender_name = interaction.user.display_name
+        prompt = f"[{sender_name}]: Provide authentic Duas for topic/situation: '{topic}'."
+        if language:
+            prompt += f"\n\n[MANDATORY INSTRUCTION: Force and translate your entire final answer to be strictly in '{language}' language.]"
 
-    jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_RINGAN)
-    await kirim_pesan_panjang(interaction, jawaban, mode="slash")
+        jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_RINGAN)
+        await kirim_pesan_panjang(interaction, jawaban, mode="slash")
+    except Exception as e:
+        await interaction.followup.send(f"⚠️ An error occurred: {e}")
 
 @bot.tree.command(name="dalil", description="Find Qur'anic and Hadith evidence for specific topics")
 @app_commands.describe(
@@ -330,14 +338,16 @@ async def slash_dalil(
     language: Optional[str] = None
 ):
     await interaction.response.defer()
-    sender_name = interaction.user.display_name
-    
-    prompt = f"[{sender_name}]: List authentic evidence from Qur'an and Sunnah regarding: '{topic}'."
-    if language:
-        prompt += f"\n\n[MANDATORY INSTRUCTION: Force and translate your entire final answer to be strictly in '{language}' language.]"
+    try:
+        sender_name = interaction.user.display_name
+        prompt = f"[{sender_name}]: List authentic evidence from Qur'an and Sunnah regarding: '{topic}'."
+        if language:
+            prompt += f"\n\n[MANDATORY INSTRUCTION: Force and translate your entire final answer to be strictly in '{language}' language.]"
 
-    jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_RINGAN)
-    await kirim_pesan_panjang(interaction, jawaban, mode="slash")
+        jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_RINGAN)
+        await kirim_pesan_panjang(interaction, jawaban, mode="slash")
+    except Exception as e:
+        await interaction.followup.send(f"⚠️ An error occurred: {e}")
 
 @bot.tree.command(name="search", description="Search Islamic research references from the web")
 @app_commands.describe(
@@ -350,34 +360,38 @@ async def slash_search(
     language: Optional[str] = None
 ):
     await interaction.response.defer()
-    sender_name = interaction.user.display_name
-    
-    web_data = await asyncio.to_thread(cari_web, query)
-    full_prompt = f"[{sender_name}]: Use the following web references to answer:\n\nREFERENCES:\n{web_data}\n\nQUESTION: {query}"
-    if language:
-        full_prompt += f"\n\n[MANDATORY INSTRUCTION: Force and translate your entire final answer to be strictly in '{language}' language.]"
-        
-    jawaban = await asyncio.to_thread(tanya_groq, full_prompt, MODEL_RINGAN)
-    await kirim_pesan_panjang(interaction, jawaban, mode="slash")
+    try:
+        sender_name = interaction.user.display_name
+        web_data = await asyncio.to_thread(cari_web, query)
+        full_prompt = f"[{sender_name}]: Use the following web references to answer:\n\nREFERENCES:\n{web_data}\n\nQUESTION: {query}"
+        if language:
+            full_prompt += f"\n\n[MANDATORY INSTRUCTION: Force and translate your entire final answer to be strictly in '{language}' language.]"
+            
+        jawaban = await asyncio.to_thread(tanya_groq, full_prompt, MODEL_RINGAN)
+        await kirim_pesan_panjang(interaction, jawaban, mode="slash")
+    except Exception as e:
+        await interaction.followup.send(f"⚠️ An error occurred: {e}")
 
 @bot.tree.command(name="test", description="Test Groq API connection, latency, and system health")
 async def slash_test(interaction: discord.Interaction):
     await interaction.response.defer()
-    start_time = time.time()
-    
-    respon = await asyncio.to_thread(tanya_groq, "System test: Provide 1 short Islamic greeting in English.", MODEL_RINGAN)
-    api_latency = round((time.time() - start_time) * 1000)
-    discord_ping = round(bot.latency * 1000)
-    
-    status_msg = (
-        "🧪 **[SYSTEM DIAGNOSTIC - ISLAMIC.AI]**\n\n"
-        f"🟢 **Groq API Status:** Connected & Active\n"
-        f"⚡ **API Latency:** `{api_latency}ms`\n"
-        f"📡 **Discord Ping:** `{discord_ping}ms`\n"
-        f"🧠 **Active Models:** 3-Tier (`openai/gpt-oss-120b` | `llama-3.1-8b-instant` | `llama-3.3-70b-versatile`)\n\n"
-        f"💬 **Output Test Sample:**\n> {respon}"
-    )
-    await interaction.followup.send(status_msg)
+    try:
+        start_time = time.time()
+        respon = await asyncio.to_thread(tanya_groq, "System test: Provide 1 short Islamic greeting in English.", MODEL_RINGAN)
+        api_latency = round((time.time() - start_time) * 1000)
+        discord_ping = round(bot.latency * 1000)
+        
+        status_msg = (
+            "🧪 **[SYSTEM DIAGNOSTIC - ISLAMIC.AI]**\n\n"
+            f"🟢 **Groq API Status:** Connected & Active\n"
+            f"⚡ **API Latency:** `{api_latency}ms`\n"
+            f"📡 **Discord Ping:** `{discord_ping}ms`\n"
+            f"🧠 **Active Models:** 3-Tier (`openai/gpt-oss-120b` | `llama-3.1-8b-instant` | `llama-3.3-70b-versatile`)\n\n"
+            f"💬 **Output Test Sample:**\n> {respon}"
+        )
+        await interaction.followup.send(status_msg)
+    except Exception as e:
+        await interaction.followup.send(f"⚠️ Diagnostic test failed: {e}")
 
 @bot.tree.command(name="ping", description="Check bot latency status")
 async def slash_ping(interaction: discord.Interaction):
