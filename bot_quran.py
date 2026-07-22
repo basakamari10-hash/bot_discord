@@ -102,7 +102,8 @@ def cari_web(query):
         query_bersih = bersihkan_query_pencarian(query)
         results = []
         with DDGS() as ddgs:
-            res = ddgs.text(f"dalil quran hadith matan arab fiqh tafsir {query_bersih}", max_results=4)
+            # Menggunakan query Bahasa Inggris agar DuckDuckGo selalu menarik ayat/hadits yang TEPAT KONTEKS
+            res = ddgs.text(f"quran verse hadith authentic fiqh {query_bersih}", max_results=4)
             for r in res:
                 results.append(f"Title: {r['title']}\nContent: {r['body']}")
         
