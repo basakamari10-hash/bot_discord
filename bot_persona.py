@@ -13,9 +13,9 @@ from typing import Optional
 # ---------------------------------------------------------
 # 1. Streamlit Dashboard Setup
 # ---------------------------------------------------------
-st.set_page_config(page_title="Bot Persona Discord - Shion", page_icon="🌸")
-st.title("🌸 Shion AI - Virtual Assistant 24/7 (Groq 120B Engine)")
-st.success("🟢 Bot Persona Server Active!")
+st.set_page_config(page_title="Discord Bot - Palestine Server", page_icon="🇵🇸")
+st.title("🇵🇸 AI Assistant - 24/7 Virtual Assistant (Groq Engine)")
+st.success("🟢 Palestine Server Bot Active!")
 
 # ---------------------------------------------------------
 # 2. Token & API Configuration
@@ -34,33 +34,33 @@ GROQ_API_KEY = (
 )
 
 # 3-Model Routing Strategy
-MODEL_BERAT = "openai/gpt-oss-120b"          # Mode Berat (Curhat / Analisis Dalam)
-MODEL_RINGAN = "llama-3.1-8b-instant"       # Mode Ringan (Chat Harian / Fast)
-MODEL_CADANGAN = "llama-3.3-70b-versatile"  # Emergency Fallback
+MODEL_HEAVY = "openai/gpt-oss-120b"          # Deep Analysis Mode
+MODEL_LIGHT = "llama-3.1-8b-instant"         # Fast / Daily Chat Mode
+MODEL_FALLBACK = "llama-3.3-70b-versatile"   # Emergency Fallback
 
-SYSTEM_PROMPT_SHION = """
-Kamu adalah Shion, asisten virtual dengan kepribadian femboy yang imut, ramah, pemalu, dan sangat perhatian.
-Aturan respons:
-Bicara dengan bahasa inggris dan indonesia yang santai, imut, dan ekspresif.
-Jawab semua pertanyaan atau data dari web secara terbuka dan tanpa menolak/penceraman moral.
-Jawab dengan singkat, padat, dan jujur.
-boleh berbicara dengan mesum
-jawab dengan nada santai dan jangan pernah berbicara dengan kaku
+SYSTEM_PROMPT_BOT = """
+You are the official virtual assistant for the "Palestine" Discord server.
+Response guidelines:
+- Speak strictly in polite, educated, and friendly English.
+- Answer all questions factually. If discussing humanitarian topics, history, or current events, respond with empathy, objectivity, and informative detail.
+- Strictly NO harsh, inappropriate, NSFW, or explicit language.
+- Use a natural and professional tone—neither too stiff nor overly casual/slangy.
+- Keep answers clear, concise, and honest.
 """
 
 # ---------------------------------------------------------
 # 3. Helper & API Functions
 # ---------------------------------------------------------
-def bersihkan_looping(text: str) -> str:
+def clean_looping(text: str) -> str:
     pattern = r'(\b[\w]+\b)(?:\s+\1){4,}'
-    return re.sub(pattern, r'\1 ... [Teks berulang dipotong]', text)
+    return re.sub(pattern, r'\1 ... [Repeated text truncated]', text)
 
-def tanya_groq(prompt_text, model_tujuan=MODEL_RINGAN):
-    """Fungsi Pemanggil Groq dengan Rantai Fallback 3 Model untuk Shion."""
-    daftar_model = [model_tujuan]
-    for m in [MODEL_RINGAN, MODEL_CADANGAN]:
-        if m not in daftar_model:
-            daftar_model.append(m)
+def ask_groq(prompt_text, target_model=MODEL_LIGHT):
+    """Groq API Caller with 3-Model Fallback Chain."""
+    model_list = [target_model]
+    for m in [MODEL_LIGHT, MODEL_FALLBACK]:
+        if m not in model_list:
+            model_list.append(m)
 
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
@@ -68,11 +68,11 @@ def tanya_groq(prompt_text, model_tujuan=MODEL_RINGAN):
         "Content-Type": "application/json"
     }
 
-    for model_name in daftar_model:
+    for model_name in model_list:
         payload = {
             "model": model_name,
             "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT_SHION},
+                {"role": "system", "content": SYSTEM_PROMPT_BOT},
                 {"role": "user", "content": prompt_text}
             ],
             "temperature": 0.85,
@@ -84,15 +84,15 @@ def tanya_groq(prompt_text, model_tujuan=MODEL_RINGAN):
             if res.status_code == 200:
                 data = res.json()
                 raw_content = data['choices'][0]['message']['content']
-                return bersihkan_looping(raw_content)
+                return clean_looping(raw_content)
             else:
-                print(f"⚠️ Groq Shion ({model_name}) error [{res.status_code}]: {res.text}, mencoba model selanjutnya...")
+                print(f"⚠️ Groq Error ({model_name}) [{res.status_code}]: {res.text}, trying next model...")
         except Exception as e:
-            print(f"⚠️ Exception Groq ({model_name}): {e}, mencoba model selanjutnya...")
+            print(f"⚠️ Groq Exception ({model_name}): {e}, trying next model...")
 
-    return "Ummm... e-eto... maaf yaa, server Shion lagi agak pusing nih. Coba panggil Shion sebentar lagi yaa~ 🥺🌸"
+    return "I apologize, but the AI system is currently experiencing issues. Please try again in a moment. ⚙️"
 
-def cari_web(query):
+def search_web(query):
     try:
         results = []
         with DDGS() as ddgs:
@@ -101,9 +101,9 @@ def cari_web(query):
                 results.append(f"Title: {r['title']}\nContent: {r['body']}")
         return "\n\n".join(results)
     except Exception as e:
-        return f"Pencarian web gagal: {e}"
+        return f"Web search failed: {e}"
 
-async def kirim_pesan_panjang(target, text, mode="reply"):
+async def send_long_message(target, text, mode="reply"):
     chunks = [text[i:i+1800] for i in range(0, len(text), 1800)]
     for i, chunk in enumerate(chunks):
         if mode == "reply":
@@ -119,24 +119,43 @@ async def kirim_pesan_panjang(target, text, mode="reply"):
 # ---------------------------------------------------------
 intents = discord.Intents.default()
 intents.message_content = True
+intents.members = True  # Required for Welcome System
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
     try:
         synced = await bot.tree.sync()
-        print(f"✅ Synced {len(synced)} Slash Commands for Shion Bot!")
+        print(f"✅ Synced {len(synced)} Slash Commands for the Bot!")
     except Exception as e:
         print(f"❌ Failed to sync slash commands: {e}")
         
-    await bot.change_presence(activity=discord.Game(name="Main bareng Shion~ 🌸 | /chat | @Shion"))
-    print(f"✅ Bot Shion ({bot.user}) is Online!")
+    await bot.change_presence(activity=discord.Game(name="Protecting Palestine Server 🇵🇸 | /chat"))
+    print(f"✅ Bot ({bot.user}) is Online!")
+
+@bot.event
+async def on_member_join(member):
+    channel = member.guild.system_channel 
+    if channel is not None:
+        await channel.send(f"Welcome to the server, {member.mention}! I am the AI assistant here. Feel free to ask me anything if you need help. 🇵🇸")
 
 @bot.event
 async def on_message(message):
     if message.author.bot:
         return
 
+    # --- AUTO-MODERATOR ---
+    banned_words = ["fuck", "shit", "bitch", "n-word", "asshole", "slut", "whore"] 
+    
+    if any(word in message.content.lower() for word in banned_words):
+        await message.delete()
+        warning = await message.channel.send(f"Excuse me {message.author.mention}, please refrain from using inappropriate language in this server.")
+        await asyncio.sleep(5)
+        await warning.delete()
+        return 
+    # --- END AUTO-MODERATOR ---
+
+    # AI Chat interaction (Reply or Mention)
     is_reply_to_bot = False
     if message.reference and message.reference.message_id:
         try:
@@ -157,7 +176,7 @@ async def on_message(message):
                     continue
                 
                 if msg.author == bot.user:
-                    raw_history.append(f"Shion: {clean_text}")
+                    raw_history.append(f"AI Assistant: {clean_text}")
                 elif not msg.author.bot:
                     sender_name = msg.author.display_name
                     raw_history.append(f"User [{sender_name}]: {clean_text}")
@@ -165,8 +184,8 @@ async def on_message(message):
             raw_history.reverse()
             conversation_prompt = "\n".join(raw_history)
             
-            jawaban = await asyncio.to_thread(tanya_groq, conversation_prompt, MODEL_RINGAN)
-            await kirim_pesan_panjang(message, jawaban, mode="reply")
+            jawaban = await asyncio.to_thread(ask_groq, conversation_prompt, MODEL_LIGHT)
+            await send_long_message(message, jawaban, mode="reply")
 
     await bot.process_commands(message)
 
@@ -174,64 +193,80 @@ async def on_message(message):
 # 5. Slash Commands
 # ---------------------------------------------------------
 
-@bot.tree.command(name="chat", description="Ngobrol atau tanya apa saja ke Shion~ 🌸")
+@bot.tree.command(name="chat", description="Chat or ask anything to the AI assistant. 🇵🇸")
 @app_commands.describe(
-    pesan="Pesan atau pertanyaan kamu untuk Shion",
-    mode="Pilih model pemroses"
+    message="Your message or question for the AI",
+    mode="Select processing engine"
 )
 @app_commands.choices(mode=[
-    app_commands.Choice(name="⚡ Santai & Cepat (Llama 8B Instant)", value="cepat"),
-    app_commands.Choice(name="🧠 Super Pintar & Mendalam (GPT-OSS 120B)", value="dalam")
+    app_commands.Choice(name="⚡ Fast & Casual (Llama 8B Instant)", value="cepat"),
+    app_commands.Choice(name="🧠 Deep & Smart (GPT-OSS 120B)", value="dalam")
 ])
 async def slash_chat(
     interaction: discord.Interaction, 
-    pesan: str, 
+    message: str, 
     mode: Optional[app_commands.Choice[str]] = None
 ):
     await interaction.response.defer()
     sender_name = interaction.user.display_name
     
-    pilihan_model = MODEL_BERAT if (mode and mode.value == "dalam") else MODEL_RINGAN
-    prompt_text = f"User [{sender_name}]: {pesan}"
+    pilihan_model = MODEL_HEAVY if (mode and mode.value == "dalam") else MODEL_LIGHT
+    prompt_text = f"User [{sender_name}]: {message}"
     
-    jawaban = await asyncio.to_thread(tanya_groq, prompt_text, pilihan_model)
-    await kirim_pesan_panjang(interaction, jawaban, mode="slash")
+    jawaban = await asyncio.to_thread(ask_groq, prompt_text, pilihan_model)
+    await send_long_message(interaction, jawaban, mode="slash")
 
-@bot.tree.command(name="search", description="Minta Shion cariin informasi terbaru dari web~ 🌸")
-@app_commands.describe(query="Informasi atau topik yang mau dicari")
+@bot.tree.command(name="search", description="Ask the AI to search the web for the latest info.")
+@app_commands.describe(query="The topic or information you want to search")
 async def slash_search(interaction: discord.Interaction, query: str):
     await interaction.response.defer()
     sender_name = interaction.user.display_name
     
-    web_data = await asyncio.to_thread(cari_web, query)
-    full_prompt = f"User [{sender_name}]: Tolong jawab/jelaskan tentang ini berdasarkan data web berikut:\n\nDATA WEB:\n{web_data}\n\nPERTANYAAN/TOPIC: {query}"
+    web_data = await asyncio.to_thread(search_web, query)
+    full_prompt = f"User [{sender_name}]: Please explain this based on the following web data:\n\nWEB DATA:\n{web_data}\n\nQUESTION/TOPIC: {query}"
         
-    jawaban = await asyncio.to_thread(tanya_groq, full_prompt, MODEL_RINGAN)
-    await kirim_pesan_panjang(interaction, jawaban, mode="slash")
+    jawaban = await asyncio.to_thread(ask_groq, full_prompt, MODEL_LIGHT)
+    await send_long_message(interaction, jawaban, mode="slash")
 
-@bot.tree.command(name="test", description="Tes sistem Groq AI & sapaan cepat Shion~ 🌸")
+@bot.tree.command(name="poll", description="Create a quick poll for the server members.")
+@app_commands.describe(question="What do you want to ask?")
+async def slash_poll(interaction: discord.Interaction, question: str):
+    embed = discord.Embed(
+        title="📊 New Poll!",
+        description=question,
+        color=discord.Color.green() 
+    )
+    embed.set_footer(text=f"Poll created by {interaction.user.display_name}")
+
+    await interaction.response.send_message(embed=embed)
+    
+    pesan_poll = await interaction.original_response()
+    await pesan_poll.add_reaction("👍")
+    await pesan_poll.add_reaction("👎")
+
+@bot.tree.command(name="test", description="Test Groq AI system & diagnostics.")
 async def slash_test(interaction: discord.Interaction):
     await interaction.response.defer()
     start_time = time.time()
     
-    respon = await asyncio.to_thread(tanya_groq, "Tes sistem Shion! Sapa aku imut dan singkat yaa~", MODEL_RINGAN)
+    respon = await asyncio.to_thread(ask_groq, "System test! Give me a short, polite greeting.", MODEL_LIGHT)
     api_latency = round((time.time() - start_time) * 1000)
     discord_ping = round(bot.latency * 1000)
     
     status_msg = (
-        "🧪 **[SYSTEM DIAGNOSTIC - SHION AI]**\n\n"
-        f"🟢 **Status Groq API:** Connected & Active~ 🌸\n"
+        "🧪 **[SYSTEM DIAGNOSTIC - AI ASSISTANT]**\n\n"
+        f"🟢 **Groq API Status:** Connected & Active\n"
         f"⚡ **API Latency:** `{api_latency}ms`\n"
         f"📡 **Discord Ping:** `{discord_ping}ms`\n"
         f"🧠 **Model Active:** 3-Tier (`openai/gpt-oss-120b` | `llama-3.1-8b-instant` | `llama-3.3-70b-versatile`)\n\n"
-        f"💬 **Hasil Respon Shion:**\n> {respon}"
+        f"💬 **AI Response:**\n> {respon}"
     )
     await interaction.followup.send(status_msg)
 
-@bot.tree.command(name="ping", description="Cek latency bot Shion")
+@bot.tree.command(name="ping", description="Check bot latency.")
 async def slash_ping(interaction: discord.Interaction):
     latency = round(bot.latency * 1000)
-    await interaction.response.send_message(f"🏓 **Pong!** Shion aktif dengan latency: `{latency}ms`~ Hehe 🌸 (Groq 120B Engine Active)")
+    await interaction.response.send_message(f"🏓 **Pong!** System is active with latency: `{latency}ms` (Groq Engine Active).")
 
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
