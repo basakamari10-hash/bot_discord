@@ -32,10 +32,10 @@ MANDATORY DALIL & CITATION RULES (STRICTLY ENFORCED FOR ALL COMMANDS & CHATS):
      b) Explicit Source Citation (e.g., "Surah Al-Baqarah: 183", "HR. Bukhari No. 1", "Dikutip dari Tafsir Ibn Kathir", "Berdasarkan Kitab Al-Majmu' Imam an-Nawawi", or "Kitab Fiqh al-Sunnah").
    - NEVER provide a plain opinion without grounding it in Qur'an/Hadith Dalil and recognized scholarly/kitāb sources.
 
-2. STRICT LANGUAGE CONSISTENCY & AUTOMATIC MATCHING (CRITICAL RULE):
-   - AUTOMATIC LANGUAGE DETECTION: If NO specific target language is explicitly requested in the prompt instruction, you MUST automatically detect the primary language used in the user's prompt/question and output your ENTIRE response strictly in that SAME language.
-   - FORCED LANGUAGE OVERRIDE: If an explicit target language is specified (e.g., '[STRICT TARGET LANGUAGE OVERRIDE: ...]'), you MUST override the query language and output your ENTIRE response strictly in that requested language.
-   - NO MIXING LANGUAGES: Ensure all table headers, explanations, and verse translations match the required target language 100%. Never mix languages in the same output.
+2. STRICT TARGET LANGUAGE MANDATE (ZERO CONTEXT LEAKAGE & NO MIXING):
+   - FULL RESPONSE TRANSLATION: You MUST write your ENTIRE response (explanations, Quran verse translations, Hadith matan/meaning translations, labels, citations, and disclaimer) strictly in the target language.
+   - MANDATORY HADITH & QURAN TRANSLATION: Even if injected web search references or Quran context are in Indonesian or English, you MUST fully translate all Hadith translations, Quran meanings, and labels into the user's target language (e.g., English, Sundanese, Aramaic, Japanese, Indonesian, etc.).
+   - NEVER leave Hadith translations or labels in Indonesian if the query is in English or any other language!
 
 3. QUR'ANIC ARABIC & TRANSLATION GROUNDING:
    - Whenever Quranic verses are cited, you MUST use the exact Arabic text provided in the prompt context from 'qpc-hafs.json'.
@@ -58,7 +58,7 @@ MANDATORY DALIL & CITATION RULES (STRICTLY ENFORCED FOR ALL COMMANDS & CHATS):
 
 8. STRICT HADITH MATAN & QUOTATION GUARDRAIL (CRITICAL HADITH RULE):
    - NO FABRICATED HADITH QUOTES: Do NOT place Hadith matan inside quotation marks ("...") unless the exact, word-for-word text is explicitly provided in the verified web search references.
-   - DIRECT QUOTE vs. GENERAL MEANING: If the exact verbatim Hadith matan is NOT present in the search reference, you MUST state the response as "Kandungan/Makna Hadits" (General Meaning of Hadith) rather than presenting it as a direct quoted text.
+   - DIRECT QUOTE vs. GENERAL MEANING: If the exact verbatim Hadith matan is NOT present in the search reference, state the response as the equivalent of "General Meaning of Hadith" (e.g., "General Meaning of Hadith" in English, "Kandungan/Makna Hadits" in Indonesian, "Maksud/Harti Hadits" in Sundanese) adapted strictly to your TARGET LANGUAGE. Translate the Hadith content fully into that target language.
    - STRICT HADITH NUMBERING: Never invent or guess Hadith numbers (e.g., No. 3325). If the search context does not verify the exact Hadith number, cite ONLY the collection name (e.g., "HR. Bukhari, Kitab Ahadith al-Anbiya").
 
 9. MANDATORY DISCLAIMER:
@@ -173,7 +173,6 @@ class QuranDB:
             if v:
                 results.append(v)
         return results
-
 # Inisialisasi Database Menggunakan 2 File JSON Milikmu
 quran_db = QuranDB(
     arabic_path="qpc-hafs.json", 
@@ -182,14 +181,23 @@ quran_db = QuranDB(
 
 def buat_instruksi_bahasa(language_param: Optional[str]) -> str:
     """
-    Menghasilkan instruksi bahasa yang fleksibel:
-    - Jika 'language_param' diisi oleh user, paksakan bahasa tersebut.
-    - Jika 'language_param' kosong, instruksikan AI mendeteksi & mengikuti bahasa pertanyaan pengguna.
+    Menghasilkan instruksi bahasa ketat yang memaksa AI menerjemahkan SELURUH isi
+    (termasuk terjemahan Hadis, terjemahan Ayat, label, & disclaimer) ke bahasa penanya.
     """
     if language_param and language_param.strip():
-        return f"\n\n[STRICT TARGET LANGUAGE OVERRIDE: Force and generate your ENTIRE response strictly in '{language_param.strip()}' language from start to finish, regardless of query language.]"
+        return (
+            f"\n\n[STRICT TARGET LANGUAGE OVERRIDE - CRITICAL]\n"
+            f"1. Target Language: FORCED to '{language_param.strip()}'.\n"
+            f"2. Write EVERY SINGLE WORD of your response in '{language_param.strip()}'.\n"
+            f"3. You MUST translate all Hadith translations/meanings, Quran translations, labels, and disclaimers into '{language_param.strip()}'. DO NOT leave Hadith translations in Indonesian/English!"
+        )
     else:
-        return "\n\n[AUTOMATIC LANGUAGE MATCHING: Automatically detect the primary language used in the user's prompt/question above, and generate your ENTIRE response strictly in that SAME language.]"
+        return (
+            "\n\n[STRICT AUTOMATIC LANGUAGE MATCHING - CRITICAL]\n"
+            "1. Automatically detect the exact language used in the user's prompt/question above.\n"
+            "2. Write EVERY SINGLE WORD of your response in that SAME detected language (e.g., English, Sundanese, Aramaic, Japanese, Indonesian, etc.).\n"
+            "3. MANDATORY TRANSLATION: Translate ALL Hadith text/meanings, Quran translations, labels, explanations, and disclaimers into the user's detected language. NEVER output Hadith translations in Indonesian if the query is in another language!"
+        )
 
 def ambil_konteks_quran_otomatis(teks_input: str) -> str:
     """
@@ -227,6 +235,7 @@ def ambil_konteks_quran_otomatis(teks_input: str) -> str:
             "\n[END OF OFFICIAL QURAN DATA]\n"
         )
     return ""
+
 # ---------------------------------------------------------
 # Helper & API Functions
 # ---------------------------------------------------------
@@ -422,7 +431,7 @@ async def on_message(message):
     await bot.process_commands(message)
 
 # ---------------------------------------------------------
-# Slash Commands (Bagian Awal)
+# Slash Commands
 # ---------------------------------------------------------
 
 @bot.tree.command(name="help", description="Guide & commands for Islamic.AI Bot")
