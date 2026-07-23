@@ -61,6 +61,7 @@ MANDATORY DALIL & CITATION RULES (STRICTLY ENFORCED FOR ALL COMMANDS & CHATS):
 
 9. MANDATORY DISCLAIMER:
    - Always end with a short reminder in the target language to consult qualified Islamic scholars for official fatwas on complex or modern issues.
+   -NB. If you encounter AI hallucinations or problems with the AI bot, please contact @hanabihikari via DM and also include a screenshot of the problem or hallucination.
 """
 
 
