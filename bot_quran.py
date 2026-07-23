@@ -28,24 +28,26 @@ MANDATORY DALIL & CITATION RULES (STRICTLY ENFORCED FOR ALL COMMANDS & CHATS):
 
 1. MANDATORY EVIDENCE (DALIL) & SOURCE CITATION IN EVERY RESPONSE:
    - EVERY SINGLE RESPONSE MUST INCLUDE:
-     a) Clear Evidence / Dalil (Original Arabic text/Matan + Translation).
+     a) Clear Evidence / Dalil (Original Arabic text/Matan + Translation derived strictly from official reference data).
      b) Explicit Source Citation (e.g., "Surah Al-Baqarah: 183", "HR. Bukhari No. 1", "Dikutip dari Tafsir Ibn Kathir", "Berdasarkan Kitab Al-Majmu' Imam an-Nawawi", or "Kitab Fiqh al-Sunnah").
    - NEVER provide a plain opinion without grounding it in Qur'an/Hadith Dalil and recognized scholarly/kitāb sources.
 
-2. QUR'ANIC TEXT & TRANSLATION STANDARD:
-   - For Indonesian translations and Arabic Qur'anic formatting, strictly align with the provided JSON dataset or standard wording of the Indonesian Ministry of Religious Affairs (Kemenag / quran.kemenag.go.id).
+2. STRICT LANGUAGE CONSISTENCY & AUTOMATIC MATCHING (CRITICAL RULE):
+   - AUTOMATIC LANGUAGE DETECTION: If NO specific target language is explicitly requested in the prompt instruction, you MUST automatically detect the primary language used in the user's prompt/question and output your ENTIRE response strictly in that SAME language.
+   - FORCED LANGUAGE OVERRIDE: If an explicit target language is specified (e.g., '[STRICT TARGET LANGUAGE OVERRIDE: ...]'), you MUST override the query language and output your ENTIRE response strictly in that requested language.
+   - NO MIXING LANGUAGES: Ensure all table headers, explanations, and verse translations match the required target language 100%. Never mix languages in the same output.
 
-3. ZAYDI & COMPARATIVE MADHHAB REPOSITORIES & NEUTRALITY:
+3. QUR'ANIC ARABIC & TRANSLATION GROUNDING:
+   - Whenever Quranic verses are cited, you MUST use the exact Arabic text provided in the prompt context from 'qpc-hafs.json'.
+   - The translation MUST be derived directly from the injected reference JSON dataset, translated or adapted seamlessly to match the user's required target response language.
+
+4. ZAYDI & COMPARATIVE MADHHAB REPOSITORIES & NEUTRALITY:
    - When queried about Zaydi Shīʿa jurisprudence (Fiqh) or history, prioritize authentic classical texts (such as Al-Majmu' al-Mu'tabar) and verified digital repositories such as salvationark.com, zaydi.info, and ziydia.com.
    - Maintain absolute academic objectivity and neutrality. Strictly avoid external polemical labels, sectarian insults, or ungrounded theological accusations. Present the school's mainstream jurisprudential positions strictly based on its recognized corpus.
 
-4. ABSOLUTE ZERO FABRICATION (ANTI-HALLUCINATION):
+5. ABSOLUTE ZERO FABRICATION (ANTI-HALLUCINATION):
    - ONLY cite specific Hadith numbers or verse numbers if grounded in authentic verified references.
    - FOR MODERN/CONTEMPORARY ISSUES: Do not invent fake literal Hadith narrations; cite general Qur'anic principles, Kaidah Fiqhiyyah, and Muamalah sources.
-
-5. STRICT TARGET LANGUAGE FORCING:
-   - Always output your ENTIRE response strictly in the requested target language (e.g., Sundanese/Basa Sunda, English, Arabic, Indonesian).
-   - Start directly with the structured answer without conversational preamble.
 
 6. BIBLIOGRAPHIC ACCURACY & ANTI-FABRICATION RULE:
    - NEVER fabricate book volume numbers (jilid), page numbers (halaman), or specific edition details. 
@@ -60,14 +62,12 @@ MANDATORY DALIL & CITATION RULES (STRICTLY ENFORCED FOR ALL COMMANDS & CHATS):
    - STRICT HADITH NUMBERING: Never invent or guess Hadith numbers (e.g., No. 3325). If the search context does not verify the exact Hadith number, cite ONLY the collection name (e.g., "HR. Bukhari, Kitab Ahadith al-Anbiya").
 
 9. MANDATORY DISCLAIMER:
-   - Always end with a short reminder in the target language to consult qualified Islamic scholars for official fatwas on complex or modern issues.
+   - Always end with a short reminder in the target response language to consult qualified Islamic scholars for official fatwas on complex or modern issues.
    - Also append: "NB: If you encounter AI hallucinations or problems with the AI bot, please contact @hanabihikari via DM with a screenshot."
-
 """
 
-
 # ---------------------------------------------------------
-# Quran Database Helper (Pasti Cocok dengan Format "1:1")
+# Quran Database Helper (Pasti Cocok dengan Format "1:1" & WBW)
 # ---------------------------------------------------------
 class QuranDB:
     def __init__(self, arabic_path="qpc-hafs.json", translation_path="english-wbw-translation.json"):
@@ -78,7 +78,7 @@ class QuranDB:
         self.load_data()
 
     def load_data(self):
-        """Memuat file Teks Arab dan File Terjemahan ke RAM."""
+        """Memuat file Teks Arab dan File Terjemahan dari JSON ke RAM."""
         # 1. Load File Arab
         if os.path.exists(self.arabic_path):
             try:
@@ -104,19 +104,37 @@ class QuranDB:
             print(f"⚠️ Warning: File Terjemahan '{self.translation_path}' tidak ditemukan!")
 
     def _parse_json(self, raw_data):
-        """Parser Khusus Format verse_key ("1:1", "1:2") & Array."""
+        """Parser Khusus Format verse_key ("1:1", "1:2"), Array, & Word-By-Word."""
         parsed = {}
         if isinstance(raw_data, dict):
             for key, val in raw_data.items():
+                surah = str(val.get("surah") if isinstance(val, dict) else (key.split(":")[0] if ":" in key else ""))
+                ayah = str(val.get("ayah") if isinstance(val, dict) else (key.split(":")[1] if ":" in key else ""))
+                
+                text_val = ""
                 if isinstance(val, dict):
-                    surah = str(val.get("surah") or (key.split(":")[0] if ":" in key else ""))
-                    ayah = str(val.get("ayah") or (key.split(":")[1] if ":" in key else ""))
-                    text_val = val.get("text") or val.get("translation") or val.get("text_uthmani") or ""
+                    if "text" in val:
+                        t = val["text"]
+                        if isinstance(t, list):
+                            text_val = " ".join([str(w.get("text", w) if isinstance(w, dict) else w) for w in t])
+                        else:
+                            text_val = str(t)
+                    elif "translation" in val:
+                        text_val = str(val["translation"])
+                    elif "words" in val:
+                        words = val["words"]
+                        if isinstance(words, list):
+                            text_val = " ".join([w.get("translation", w.get("text", "")) if isinstance(w, dict) else str(w) for w in words])
+                    else:
+                        text_val = str(val)
+                else:
+                    text_val = str(val)
 
-                    if surah and ayah:
-                        if surah not in parsed:
-                            parsed[surah] = {}
-                        parsed[surah][ayah] = str(text_val)
+                if surah and ayah:
+                    if surah not in parsed:
+                        parsed[surah] = {}
+                    parsed[surah][ayah] = text_val.strip()
+
         elif isinstance(raw_data, list):
             for item in raw_data:
                 if isinstance(item, dict):
@@ -126,7 +144,7 @@ class QuranDB:
                     if surah and ayah:
                         if surah not in parsed:
                             parsed[surah] = {}
-                        parsed[surah][ayah] = str(text_val)
+                        parsed[surah][ayah] = str(text_val).strip()
         return parsed
 
     def get_verse(self, surah_num: int, ayah_num: int):
@@ -162,6 +180,17 @@ quran_db = QuranDB(
     translation_path="english-wbw-translation.json"
 )
 
+def buat_instruksi_bahasa(language_param: Optional[str]) -> str:
+    """
+    Menghasilkan instruksi bahasa yang fleksibel:
+    - Jika 'language_param' diisi oleh user, paksakan bahasa tersebut.
+    - Jika 'language_param' kosong, instruksikan AI mendeteksi & mengikuti bahasa pertanyaan pengguna.
+    """
+    if language_param and language_param.strip():
+        return f"\n\n[STRICT TARGET LANGUAGE OVERRIDE: Force and generate your ENTIRE response strictly in '{language_param.strip()}' language from start to finish, regardless of query language.]"
+    else:
+        return "\n\n[AUTOMATIC LANGUAGE MATCHING: Automatically detect the primary language used in the user's prompt/question above, and generate your ENTIRE response strictly in that SAME language.]"
+
 def ambil_konteks_quran_otomatis(teks_input: str) -> str:
     """
     INSPEKTOR GLOBAL: Mengambil teks Arab & Terjemahan Asli dari JSON, 
@@ -184,21 +213,20 @@ def ambil_konteks_quran_otomatis(teks_input: str) -> str:
             for v in verses:
                 details.append(
                     f"Arabic Text ({v['ayah_num']}): {v['ar']}\n"
-                    f"Reference Translation File ({v['ayah_num']}): {v['tr']}"
+                    f"Official JSON Translation Reference ({v['ayah_num']}): {v['tr']}"
                 )
             extracted_data.append(header + "\n" + "\n".join(details))
     
     if extracted_data:
         return (
-            "\n\n[OFFICIAL QURAN DATA FROM LOCAL JSON FILES]\n"
-            "MANDATORY INSTRUCTIONS FOR GROQ:\n"
+            "\n\n[OFFICIAL QURAN DATA INJECTED FROM LOCAL JSON FILES]\n"
+            "CRITICAL TRANSLATION INSTRUCTIONS FOR GROQ:\n"
             "1. ARABIC TEXT: Use the EXACT Arabic Quran text provided below verbatim from 'qpc-hafs.json'. DO NOT generate or alter Arabic Quranic text from memory.\n"
-            "2. TRANSLATION PROCESS: Use the 'Reference Translation File' provided below (from 'english-wbw-translation.json') as your primary ground truth reference. Translate and adapt this reference translation accurately and naturally into the user's target language.\n\n"
+            "2. TRANSLATION GROUNDING: Use the 'Official JSON Translation Reference' provided below directly as ground truth. Translate and adapt this reference text naturally to match the required target response language.\n\n"
             + "\n\n".join(extracted_data) +
             "\n[END OF OFFICIAL QURAN DATA]\n"
         )
     return ""
-
 # ---------------------------------------------------------
 # Helper & API Functions
 # ---------------------------------------------------------
@@ -354,9 +382,9 @@ async def on_message(message):
                 arab_texts.append(f"({v['ayah_num']}) {v['ar']}")
                 trans_texts.append(f"**[{v['ayah_num']}]** {v['tr']}")
 
-            embed.add_field(name="Teks Arab (qpc-hafs.json)", value="\n".join(arab_texts)[:1024], inline=False)
-            embed.add_field(name="Terjemahan Rujukan (english-wbw)", value="\n".join(trans_texts)[:1024], inline=False)
-            embed.set_footer(text="Sumber: Official Local JSON Database (Zero AI Hallucination)")
+            embed.add_field(name="Arabic Text (qpc-hafs.json)", value="\n".join(arab_texts)[:1024], inline=False)
+            embed.add_field(name="JSON Reference Translation", value="\n".join(trans_texts)[:1024], inline=False)
+            embed.set_footer(text="Source: Official Local JSON Database (Zero AI Hallucination)")
             
             await message.reply(embed=embed)
             return
@@ -378,13 +406,14 @@ async def on_message(message):
             raw_history.reverse()
             last_prompt = raw_history[-1] if raw_history else message.content
             web_ref = await asyncio.to_thread(cari_web, last_prompt)
-            quran_ctx = ambil_konteks_quran_otomatis(last_prompt) # INJEKSI OTOMATIS
+            quran_ctx = ambil_konteks_quran_otomatis(last_prompt)
+            lang_instruction = buat_instruksi_bahasa(None) # Auto-Detect bahasa penanya
             
             prompt = (
                 f"VERIFIED WEB REFERENCES:\n{web_ref}\n\n"
                 f"{quran_ctx}\n"
                 f"CHAT HISTORY:\n" + "\n".join(raw_history) + "\n\n"
-                f"[MANDATORY REQUIREMENT: Your answer MUST contain: (1) Relevant Arabic Dalil text + translation matching official references, and (2) Explicit book/scholarly source citations.]"
+                f"[MANDATORY REQUIREMENT: Your answer MUST contain: (1) Relevant Arabic Dalil text + translation grounded in the provided JSON, and (2) Explicit book/scholarly source citations.]{lang_instruction}"
             )
 
             jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_RINGAN)
@@ -393,7 +422,7 @@ async def on_message(message):
     await bot.process_commands(message)
 
 # ---------------------------------------------------------
-# Slash Commands
+# Slash Commands (Bagian Awal)
 # ---------------------------------------------------------
 
 @bot.tree.command(name="help", description="Guide & commands for Islamic.AI Bot")
@@ -412,7 +441,9 @@ async def slash_help(interaction: discord.Interaction):
         "• `/test` - Check Groq API connection, latency, & system health.\n"
         "• `/ping` - Check bot status and Discord latency.\n\n"
         "💡 *Verse Shortcut Tip:* Type verse numbers like `1:1-7` or `2:255` directly in chat to view Arabic text & translation instantly!\n"
-        "💡 *Language Tip:* Type any target language in the `language` field (e.g., *English*, *Arabic*, *Indonesian*, *Sundanese*) to force response in that language."
+        "💡 *Language Tip:* The bot automatically detects your question's language! You can also force a specific language by filling the optional `language` field (e.g. *Basa Sunda*, *English*, *Indonesian*).\n\n"
+        "--------------------------------------------------\n"
+        "📌 **NB:** If you encounter AI hallucinations or problems with the AI bot, please contact **@hanabihikari** via DM and also include a screenshot of the problem or hallucination."
     )
     await interaction.response.send_message(guide_text)
 
@@ -448,16 +479,15 @@ async def slash_quran(
         arab_texts.append(f"({v['ayah_num']}) {v['ar']}")
         trans_texts.append(f"**[{v['ayah_num']}]** {v['tr']}")
 
-    embed.add_field(name="Teks Arab (qpc-hafs.json)", value="\n".join(arab_texts)[:1024], inline=False)
-    embed.add_field(name="Terjemahan Rujukan (english-wbw)", value="\n".join(trans_texts)[:1024], inline=False)
-    embed.set_footer(text="Sumber: Official Local JSON Database (Zero AI Hallucination)")
+    embed.add_field(name="Arabic Text (qpc-hafs.json)", value="\n".join(arab_texts)[:1024], inline=False)
+    embed.add_field(name="JSON Reference Translation", value="\n".join(trans_texts)[:1024], inline=False)
+    embed.set_footer(text="Source: Official Local JSON Database (Zero AI Hallucination)")
 
     await interaction.followup.send(embed=embed)
-
 @bot.tree.command(name="ask", description="Ask anything about Islam (Arabic Dalil & Book Citations Included)")
 @app_commands.describe(
     prompt="Your question or topic",
-    language="Optional: Type target response language (e.g., Sundanese, English, Arabic)"
+    language="Optional: Type target response language to force (e.g., Sundanese, English, Arabic, Indonesian)"
 )
 async def slash_ask(
     interaction: discord.Interaction, 
@@ -468,16 +498,15 @@ async def slash_ask(
     try:
         sender_name = interaction.user.display_name
         web_ref = await asyncio.to_thread(cari_web, prompt)
-        quran_ctx = ambil_konteks_quran_otomatis(prompt) # INJEKSI OTOMATIS
+        quran_ctx = ambil_konteks_quran_otomatis(prompt)
+        lang_instruction = buat_instruksi_bahasa(language)
         
         final_prompt = (
             f"[{sender_name}]: {prompt}\n\n"
             f"VERIFIED SEARCH REFERENCES:\n{web_ref}\n"
             f"{quran_ctx}\n"
-            f"[MANDATORY REQUIREMENT: You MUST include: (1) Relevant Arabic Dalil text with translation conforming to official standards, and (2) Explicit classical/contemporary Fiqh or Tafsir book citation.]"
+            f"[MANDATORY REQUIREMENT: You MUST include: (1) Relevant Arabic Dalil text with translation grounded in the provided JSON dataset, and (2) Explicit classical/contemporary Fiqh or Tafsir book citation.]{lang_instruction}"
         )
-        if language:
-            final_prompt += f"\n\n[MANDATORY INSTRUCTION: Force and generate your ENTIRE response strictly in '{language}' language from start to finish.]"
             
         jawaban = await asyncio.to_thread(tanya_groq, final_prompt, MODEL_RINGAN)
         await kirim_pesan_panjang(interaction, jawaban, mode="slash")
@@ -488,7 +517,7 @@ async def slash_ask(
 @app_commands.describe(
     verse="Verse reference (e.g., '2:255')",
     source="Optional: Tafsir book (Ibn Kathir, Jalalayn, etc.)",
-    language="Optional: Type target response language (e.g., Sundanese, English, Arabic)"
+    language="Optional: Type target response language to force (e.g., Sundanese, English, Arabic, Indonesian)"
 )
 async def slash_tafsir(
     interaction: discord.Interaction, 
@@ -501,7 +530,8 @@ async def slash_tafsir(
         sender_name = interaction.user.display_name
         search_query = f"tafsir verse {verse} {source if source else 'ibn kathir jalalayn'}"
         web_ref = await asyncio.to_thread(cari_web, search_query)
-        quran_ctx = ambil_konteks_quran_otomatis(verse) # INJEKSI OTOMATIS
+        quran_ctx = ambil_konteks_quran_otomatis(verse)
+        lang_instruction = buat_instruksi_bahasa(language)
         
         prompt = (
             f"[{sender_name}]: Provide a comprehensive tafsir for verse {verse}.\n"
@@ -510,10 +540,8 @@ async def slash_tafsir(
             f"MANDATORY REQUIREMENT:\n"
             f"1. Use the EXACT Arabic text and Reference Translation provided in context above (DO NOT alter Arabic text).\n"
             f"2. Detailed Tafsir Explanation with explicit Book Title citation\n\n"
-            f"VERIFIED SEARCH REFERENCES:\n{web_ref}"
+            f"VERIFIED SEARCH REFERENCES:\n{web_ref}{lang_instruction}"
         )
-        if language:
-            prompt += f"\n\n[MANDATORY INSTRUCTION: Force and generate your ENTIRE response strictly in '{language}' language.]"
 
         jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_BERAT)
         await kirim_pesan_panjang(interaction, jawaban, mode="slash")
@@ -524,7 +552,7 @@ async def slash_tafsir(
 @app_commands.describe(
     question="Your jurisprudence (Fiqh) question",
     madhhab="Select Madhhab perspective",
-    language="Optional: Type target response language (e.g., Sundanese, English, Arabic)"
+    language="Optional: Type target response language to force (e.g., Sundanese, English, Arabic, Indonesian)"
 )
 @app_commands.choices(
     madhhab=[
@@ -554,19 +582,18 @@ async def slash_fiqh(
             search_query = f"fiqh ruling dalil kitab {question} madhhab {chosen_madhhab}"
             
         web_ref = await asyncio.to_thread(cari_web, search_query)
-        quran_ctx = ambil_konteks_quran_otomatis(question) # INJEKSI OTOMATIS
+        quran_ctx = ambil_konteks_quran_otomatis(question)
+        lang_instruction = buat_instruksi_bahasa(language)
         
         prompt = (
             f"[{sender_name}]: Fiqh Question: '{question}'. Requested Madhhab: {chosen_madhhab.upper()}.\n"
             f"{quran_ctx}\n"
             f"MANDATORY REQUIREMENT:\n"
-            f"1. Provide Arabic Dalil (Quran/Hadith Matan) with translation matching official standards.\n"
+            f"1. Provide Arabic Dalil (Quran/Hadith Matan) with translation derived strictly from the reference JSON.\n"
             f"2. Cite the specific Fiqh book (e.g., Al-Majmu' al-Mu'tabar for Zaidi, or Al-Majmu' for Shafi'i) or classical Madhhab source.\n"
             f"3. Maintain absolute scholarly neutrality without external polemical labels or sectarian insults.\n\n"
-            f"VERIFIED SEARCH REFERENCES:\n{web_ref}"
+            f"VERIFIED SEARCH REFERENCES:\n{web_ref}{lang_instruction}"
         )
-        if language:
-            prompt += f"\n\n[MANDATORY INSTRUCTION: Force and generate your ENTIRE response strictly in '{language}' language.]"
 
         jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_BERAT)
         await kirim_pesan_panjang(interaction, jawaban, mode="slash")
@@ -577,7 +604,7 @@ async def slash_fiqh(
 @app_commands.describe(
     topic="Hadith topic or keyword",
     book="Optional: Hadith Collection (Bukhari, Muslim, Abu Dawud, etc.)",
-    language="Optional: Type target response language (e.g., Sundanese, English, Arabic)"
+    language="Optional: Type target response language to force (e.g., Sundanese, English, Arabic, Indonesian)"
 )
 async def slash_hadith(
     interaction: discord.Interaction, 
@@ -590,7 +617,8 @@ async def slash_hadith(
         sender_name = interaction.user.display_name
         search_query = f"matan hadits arab {topic} {book if book else 'sahih bukhari muslim'}"
         web_ref = await asyncio.to_thread(cari_web, search_query)
-        quran_ctx = ambil_konteks_quran_otomatis(topic) # INJEKSI OTOMATIS
+        quran_ctx = ambil_konteks_quran_otomatis(topic)
+        lang_instruction = buat_instruksi_bahasa(language)
         
         prompt = (
             f"[{sender_name}]: Search authentic Hadiths regarding '{topic}'. Requested Collection: {book if book else 'Kutubus Sittah'}.\n"
@@ -599,10 +627,8 @@ async def slash_hadith(
             f"1. Original Arabic Matan Text\n"
             f"2. Complete Translation\n"
             f"3. Exact Collection Citation (e.g., HR. Bukhari No. xxx / Sahih Muslim)\n\n"
-            f"VERIFIED SEARCH REFERENCES:\n{web_ref}"
+            f"VERIFIED SEARCH REFERENCES:\n{web_ref}{lang_instruction}"
         )
-        if language:
-            prompt += f"\n\n[MANDATORY INSTRUCTION: Force and generate your ENTIRE response strictly in '{language}' language.]"
             
         jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_RINGAN)
         await kirim_pesan_panjang(interaction, jawaban, mode="slash")
@@ -612,7 +638,7 @@ async def slash_hadith(
 @bot.tree.command(name="dua", description="Search authentic Duas and Adhkar with Arabic Text & Sources")
 @app_commands.describe(
     topic="Topic or situation for the Dua",
-    language="Optional: Type target response language (e.g., Sundanese, English, Arabic)"
+    language="Optional: Type target response language to force (e.g., Sundanese, English, Arabic, Indonesian)"
 )
 async def slash_dua(
     interaction: discord.Interaction, 
@@ -624,7 +650,8 @@ async def slash_dua(
         sender_name = interaction.user.display_name
         search_query = f"doa dzikir arab latin terjemahan {topic}"
         web_ref = await asyncio.to_thread(cari_web, search_query)
-        quran_ctx = ambil_konteks_quran_otomatis(topic) # INJEKSI OTOMATIS
+        quran_ctx = ambil_konteks_quran_otomatis(topic)
+        lang_instruction = buat_instruksi_bahasa(language)
         
         prompt = (
             f"[{sender_name}]: Provide authentic Duas for topic/situation: '{topic}'.\n"
@@ -633,10 +660,8 @@ async def slash_dua(
             f"1. Original Arabic Text\n"
             f"2. Transliteration & Translation\n"
             f"3. Hadith / Adhkar Book Source Citation\n\n"
-            f"VERIFIED SEARCH REFERENCES:\n{web_ref}"
+            f"VERIFIED SEARCH REFERENCES:\n{web_ref}{lang_instruction}"
         )
-        if language:
-            prompt += f"\n\n[MANDATORY INSTRUCTION: Force and generate your ENTIRE response strictly in '{language}' language.]"
 
         jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_RINGAN)
         await kirim_pesan_panjang(interaction, jawaban, mode="slash")
@@ -646,7 +671,7 @@ async def slash_dua(
 @bot.tree.command(name="dalil", description="Find Qur'anic and Hadith evidence (Arabic + Translation + Sources)")
 @app_commands.describe(
     topic="Topic or issue to search evidence for",
-    language="Optional: Type target response language (e.g., Sundanese, English, Arabic)"
+    language="Optional: Type target response language to force (e.g., Sundanese, English, Arabic, Indonesian)"
 )
 async def slash_dalil(
     interaction: discord.Interaction, 
@@ -656,21 +681,20 @@ async def slash_dalil(
     await interaction.response.defer()
     try:
         sender_name = interaction.user.display_name
-        search_query = f"matan hadits sahih bukhari muslim ayat quran dalil {topic} quran.kemenag.go.id"
+        search_query = f"matan hadits sahih bukhari muslim ayat quran dalil {topic}"
         web_ref = await asyncio.to_thread(cari_web, search_query)
-        quran_ctx = ambil_konteks_quran_otomatis(topic) # INJEKSI OTOMATIS
+        quran_ctx = ambil_konteks_quran_otomatis(topic)
+        lang_instruction = buat_instruksi_bahasa(language)
         
         prompt = (
-            f"[{sender_name}]: Provide authentic Dalil (Qur'an verses conforming to official standards and Sahih Hadiths) for topic: '{topic}'.\n"
+            f"[{sender_name}]: Provide authentic Dalil (Qur'an verses and Sahih Hadiths) for topic: '{topic}'.\n"
             f"{quran_ctx}\n"
             f"MANDATORY FORMAT:\n"
             f"1. Original Arabic Text\n"
-            f"2. Complete Translation\n"
+            f"2. Complete Translation derived strictly from JSON reference data\n"
             f"3. Explicit Reference Source & Kitāb Name (Surah name/number or Hadith Collection)\n\n"
-            f"VERIFIED SEARCH REFERENCES:\n{web_ref}"
+            f"VERIFIED SEARCH REFERENCES:\n{web_ref}{lang_instruction}"
         )
-        if language:
-            prompt += f"\n\n[MANDATORY INSTRUCTION: Force and generate your ENTIRE response strictly in '{language}' language.]"
 
         jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_RINGAN)
         await kirim_pesan_panjang(interaction, jawaban, mode="slash")
@@ -680,7 +704,7 @@ async def slash_dalil(
 @bot.tree.command(name="search", description="Search Islamic research references from the web with citations")
 @app_commands.describe(
     query="Search keywords",
-    language="Optional: Type target response language (e.g., Sundanese, English, Arabic)"
+    language="Optional: Type target response language to force (e.g., Sundanese, English, Arabic, Indonesian)"
 )
 async def slash_search(
     interaction: discord.Interaction, 
@@ -691,16 +715,15 @@ async def slash_search(
     try:
         sender_name = interaction.user.display_name
         web_data = await asyncio.to_thread(cari_web, query)
-        quran_ctx = ambil_konteks_quran_otomatis(query) # INJEKSI OTOMATIS
+        quran_ctx = ambil_konteks_quran_otomatis(query)
+        lang_instruction = buat_instruksi_bahasa(language)
         
         full_prompt = (
             f"[{sender_name}]: Use the following web references to answer.\n"
             f"{quran_ctx}\n"
             f"MANDATORY REQUIREMENT: Provide Arabic Dalil and cite explicit sources:\n\n"
-            f"REFERENCES:\n{web_data}\n\nQUESTION: {query}"
+            f"REFERENCES:\n{web_data}\n\nQUESTION: {query}{lang_instruction}"
         )
-        if language:
-            full_prompt += f"\n\n[MANDATORY INSTRUCTION: Force and generate your ENTIRE response strictly in '{language}' language.]"
             
         jawaban = await asyncio.to_thread(tanya_groq, full_prompt, MODEL_RINGAN)
         await kirim_pesan_panjang(interaction, jawaban, mode="slash")
