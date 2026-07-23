@@ -59,7 +59,7 @@ MANDATORY DALIL & CITATION RULES (STRICTLY ENFORCED FOR ALL COMMANDS & CHATS):
 """
 
 # ---------------------------------------------------------
-# Quran Database Helper (Dual JSON Grounding: Arab + Translation)
+# Quran Database Helper (Pasti Cocok dengan Format "1:1")
 # ---------------------------------------------------------
 class QuranDB:
     def __init__(self, arabic_path="qpc-hafs.json", translation_path="english-wbw-translation.json"):
@@ -96,31 +96,29 @@ class QuranDB:
             print(f"⚠️ Warning: File Terjemahan '{self.translation_path}' tidak ditemukan!")
 
     def _parse_json(self, raw_data):
-        """Mendukung berbagai struktur JSON (Dict, List, Array, WBW)."""
+        """Parser Khusus Format verse_key ("1:1", "1:2") & Array."""
         parsed = {}
         if isinstance(raw_data, dict):
-            for surah, verses in raw_data.items():
-                s_str = str(surah)
-                parsed[s_str] = {}
-                v_dict = verses.get("verses", verses) if isinstance(verses, dict) else {}
-                for ayah, content in v_dict.items():
-                    a_str = str(ayah)
-                    if isinstance(content, dict):
-                        parsed[s_str][a_str] = content.get("text") or content.get("ar") or content.get("tr") or str(content)
-                    elif isinstance(content, list):
-                        # Jika format Word-By-Word berupa list kata
-                        words = [w.get("text", str(w)) if isinstance(w, dict) else str(w) for w in content]
-                        parsed[s_str][a_str] = " ".join(words)
-                    else:
-                        parsed[s_str][a_str] = str(content)
+            for key, val in raw_data.items():
+                if isinstance(val, dict):
+                    surah = str(val.get("surah") or (key.split(":")[0] if ":" in key else ""))
+                    ayah = str(val.get("ayah") or (key.split(":")[1] if ":" in key else ""))
+                    text_val = val.get("text") or val.get("translation") or val.get("text_uthmani") or ""
+
+                    if surah and ayah:
+                        if surah not in parsed:
+                            parsed[surah] = {}
+                        parsed[surah][ayah] = str(text_val)
         elif isinstance(raw_data, list):
             for item in raw_data:
-                s_str = str(item.get("surah") or item.get("surah_number") or item.get("chapter"))
-                a_str = str(item.get("ayah") or item.get("verse_number") or item.get("verse"))
-                text_val = item.get("text") or item.get("translation") or item.get("ar") or ""
-                if s_str not in parsed:
-                    parsed[s_str] = {}
-                parsed[s_str][a_str] = text_val
+                if isinstance(item, dict):
+                    surah = str(item.get("surah") or item.get("chapter") or "")
+                    ayah = str(item.get("ayah") or item.get("verse") or "")
+                    text_val = item.get("text") or item.get("translation") or ""
+                    if surah and ayah:
+                        if surah not in parsed:
+                            parsed[surah] = {}
+                        parsed[surah][ayah] = str(text_val)
         return parsed
 
     def get_verse(self, surah_num: int, ayah_num: int):
@@ -420,318 +418,4 @@ async def slash_quran(
     interaction: discord.Interaction, 
     surah: int, 
     ayat: int, 
-    ayat_sampai: Optional[int] = None
-):
-    await interaction.response.defer()
-    
-    end_v = ayat_sampai if ayat_sampai else ayat
-    verses = quran_db.get_range(surah, ayat, end_v)
-
-    if not verses:
-        await interaction.followup.send(f"❌ Ayat tidak ditemukan! Pastikan Surah **{surah}** dan Ayat **{ayat}** sudah benar.")
-        return
-
-    surah_name = verses[0]["surah_name"]
-    title_ref = f"📖 QS. {surah_name} [{surah}:{ayat}" + (f"-{end_v}]" if ayat != end_v else "]")
-    
-    embed = discord.Embed(title=title_ref, color=discord.Color.gold())
-    
-    arab_texts = []
-    trans_texts = []
-    for v in verses:
-        arab_texts.append(f"({v['ayah_num']}) {v['ar']}")
-        trans_texts.append(f"**[{v['ayah_num']}]** {v['tr']}")
-
-    embed.add_field(name="Teks Arab (qpc-hafs.json)", value="\n".join(arab_texts)[:1024], inline=False)
-    embed.add_field(name="Terjemahan Rujukan (english-wbw)", value="\n".join(trans_texts)[:1024], inline=False)
-    embed.set_footer(text="Sumber: Official Local JSON Database (Zero AI Hallucination)")
-
-    await interaction.followup.send(embed=embed)
-
-@bot.tree.command(name="ask", description="Ask anything about Islam (Arabic Dalil & Book Citations Included)")
-@app_commands.describe(
-    prompt="Your question or topic",
-    language="Optional: Type target response language (e.g., Sundanese, English, Arabic)"
-)
-async def slash_ask(
-    interaction: discord.Interaction, 
-    prompt: str, 
-    language: Optional[str] = None
-):
-    await interaction.response.defer()
-    try:
-        sender_name = interaction.user.display_name
-        web_ref = await asyncio.to_thread(cari_web, prompt)
-        quran_ctx = ambil_konteks_quran_otomatis(prompt) # INJEKSI OTOMATIS
-        
-        final_prompt = (
-            f"[{sender_name}]: {prompt}\n\n"
-            f"VERIFIED SEARCH REFERENCES:\n{web_ref}\n"
-            f"{quran_ctx}\n"
-            f"[MANDATORY REQUIREMENT: You MUST include: (1) Relevant Arabic Dalil text with translation conforming to official standards, and (2) Explicit classical/contemporary Fiqh or Tafsir book citation.]"
-        )
-        if language:
-            final_prompt += f"\n\n[MANDATORY INSTRUCTION: Force and generate your ENTIRE response strictly in '{language}' language from start to finish.]"
-            
-        jawaban = await asyncio.to_thread(tanya_groq, final_prompt, MODEL_RINGAN)
-        await kirim_pesan_panjang(interaction, jawaban, mode="slash")
-    except Exception as e:
-        await interaction.followup.send(f"⚠️ An error occurred: {e}")
-
-@bot.tree.command(name="tafsir", description="Detailed Qur'anic exegesis (Injected with Official JSON Data)")
-@app_commands.describe(
-    verse="Verse reference (e.g., '2:255')",
-    source="Optional: Tafsir book (Ibn Kathir, Jalalayn, etc.)",
-    language="Optional: Type target response language (e.g., Sundanese, English, Arabic)"
-)
-async def slash_tafsir(
-    interaction: discord.Interaction, 
-    verse: str, 
-    source: Optional[str] = None,
-    language: Optional[str] = None
-):
-    await interaction.response.defer()
-    try:
-        sender_name = interaction.user.display_name
-        search_query = f"tafsir verse {verse} {source if source else 'ibn kathir jalalayn'}"
-        web_ref = await asyncio.to_thread(cari_web, search_query)
-        quran_ctx = ambil_konteks_quran_otomatis(verse) # INJEKSI OTOMATIS
-        
-        prompt = (
-            f"[{sender_name}]: Provide a comprehensive tafsir for verse {verse}.\n"
-            f"Primary reference requested: {source if source else 'Tafsir Ibn Kathir / Jalalayn'}.\n"
-            f"{quran_ctx}\n"
-            f"MANDATORY REQUIREMENT:\n"
-            f"1. Use the EXACT Arabic text and Reference Translation provided in context above (DO NOT alter Arabic text).\n"
-            f"2. Detailed Tafsir Explanation with explicit Book Title citation\n\n"
-            f"VERIFIED SEARCH REFERENCES:\n{web_ref}"
-        )
-        if language:
-            prompt += f"\n\n[MANDATORY INSTRUCTION: Force and generate your ENTIRE response strictly in '{language}' language.]"
-
-        jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_BERAT)
-        await kirim_pesan_panjang(interaction, jawaban, mode="slash")
-    except Exception as e:
-        await interaction.followup.send(f"⚠️ An error occurred: {e}")
-
-@bot.tree.command(name="fiqh", description="Ask Fiqh rulings with Arabic Dalil & Kitāb sources")
-@app_commands.describe(
-    question="Your jurisprudence (Fiqh) question",
-    madhhab="Select Madhhab perspective",
-    language="Optional: Type target response language (e.g., Sundanese, English, Arabic)"
-)
-@app_commands.choices(
-    madhhab=[
-        app_commands.Choice(name="Shafi'i", value="shafii"),
-        app_commands.Choice(name="Hanafi", value="hanafi"),
-        app_commands.Choice(name="Maliki", value="maliki"),
-        app_commands.Choice(name="Hanbali", value="hanbali"),
-        app_commands.Choice(name="Ja'fari / Shia Twelver", value="jaafari_shia"),
-        app_commands.Choice(name="Zaidi / Shia Zaidiyyah", value="zaidi_shia"),
-        app_commands.Choice(name="Comparative (All Schools of Thought)", value="comparative_all")
-    ]
-)
-async def slash_fiqh(
-    interaction: discord.Interaction, 
-    question: str, 
-    madhhab: Optional[app_commands.Choice[str]] = None,
-    language: Optional[str] = None
-):
-    await interaction.response.defer()
-    try:
-        sender_name = interaction.user.display_name
-        chosen_madhhab = madhhab.value if madhhab else "comparative_all"
-        
-        if chosen_madhhab == "zaidi_shia":
-            search_query = f"fiqh ruling dalil kitab {question} zaidi shia site:salvationark.com OR site:zaydi.info OR site:ziydia.com"
-        else:
-            search_query = f"fiqh ruling dalil kitab {question} madhhab {chosen_madhhab}"
-            
-        web_ref = await asyncio.to_thread(cari_web, search_query)
-        quran_ctx = ambil_konteks_quran_otomatis(question) # INJEKSI OTOMATIS
-        
-        prompt = (
-            f"[{sender_name}]: Fiqh Question: '{question}'. Requested Madhhab: {chosen_madhhab.upper()}.\n"
-            f"{quran_ctx}\n"
-            f"MANDATORY REQUIREMENT:\n"
-            f"1. Provide Arabic Dalil (Quran/Hadith Matan) with translation matching official standards.\n"
-            f"2. Cite the specific Fiqh book (e.g., Al-Majmu' al-Mu'tabar for Zaidi, or Al-Majmu' for Shafi'i) or classical Madhhab source.\n"
-            f"3. Maintain absolute scholarly neutrality without external polemical labels or sectarian insults.\n\n"
-            f"VERIFIED SEARCH REFERENCES:\n{web_ref}"
-        )
-        if language:
-            prompt += f"\n\n[MANDATORY INSTRUCTION: Force and generate your ENTIRE response strictly in '{language}' language.]"
-
-        jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_BERAT)
-        await kirim_pesan_panjang(interaction, jawaban, mode="slash")
-    except Exception as e:
-        await interaction.followup.send(f"⚠️ An error occurred: {e}")
-
-@bot.tree.command(name="hadith", description="Search authentic Hadiths with Arabic Matan & Collection Citations")
-@app_commands.describe(
-    topic="Hadith topic or keyword",
-    book="Optional: Hadith Collection (Bukhari, Muslim, Abu Dawud, etc.)",
-    language="Optional: Type target response language (e.g., Sundanese, English, Arabic)"
-)
-async def slash_hadith(
-    interaction: discord.Interaction, 
-    topic: str, 
-    book: Optional[str] = None,
-    language: Optional[str] = None
-):
-    await interaction.response.defer()
-    try:
-        sender_name = interaction.user.display_name
-        search_query = f"matan hadits arab {topic} {book if book else 'sahih bukhari muslim'}"
-        web_ref = await asyncio.to_thread(cari_web, search_query)
-        quran_ctx = ambil_konteks_quran_otomatis(topic) # INJEKSI OTOMATIS
-        
-        prompt = (
-            f"[{sender_name}]: Search authentic Hadiths regarding '{topic}'. Requested Collection: {book if book else 'Kutubus Sittah'}.\n"
-            f"{quran_ctx}\n"
-            f"MANDATORY FORMAT:\n"
-            f"1. Original Arabic Matan Text\n"
-            f"2. Complete Translation\n"
-            f"3. Exact Collection Citation (e.g., HR. Bukhari No. xxx / Sahih Muslim)\n\n"
-            f"VERIFIED SEARCH REFERENCES:\n{web_ref}"
-        )
-        if language:
-            prompt += f"\n\n[MANDATORY INSTRUCTION: Force and generate your ENTIRE response strictly in '{language}' language.]"
-            
-        jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_RINGAN)
-        await kirim_pesan_panjang(interaction, jawaban, mode="slash")
-    except Exception as e:
-        await interaction.followup.send(f"⚠️ An error occurred: {e}")
-
-@bot.tree.command(name="dua", description="Search authentic Duas and Adhkar with Arabic Text & Sources")
-@app_commands.describe(
-    topic="Topic or situation for the Dua",
-    language="Optional: Type target response language (e.g., Sundanese, English, Arabic)"
-)
-async def slash_dua(
-    interaction: discord.Interaction, 
-    topic: str,
-    language: Optional[str] = None
-):
-    await interaction.response.defer()
-    try:
-        sender_name = interaction.user.display_name
-        search_query = f"doa dzikir arab latin terjemahan {topic}"
-        web_ref = await asyncio.to_thread(cari_web, search_query)
-        quran_ctx = ambil_konteks_quran_otomatis(topic) # INJEKSI OTOMATIS
-        
-        prompt = (
-            f"[{sender_name}]: Provide authentic Duas for topic/situation: '{topic}'.\n"
-            f"{quran_ctx}\n"
-            f"MANDATORY FORMAT:\n"
-            f"1. Original Arabic Text\n"
-            f"2. Transliteration & Translation\n"
-            f"3. Hadith / Adhkar Book Source Citation\n\n"
-            f"VERIFIED SEARCH REFERENCES:\n{web_ref}"
-        )
-        if language:
-            prompt += f"\n\n[MANDATORY INSTRUCTION: Force and generate your ENTIRE response strictly in '{language}' language.]"
-
-        jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_RINGAN)
-        await kirim_pesan_panjang(interaction, jawaban, mode="slash")
-    except Exception as e:
-        await interaction.followup.send(f"⚠️ An error occurred: {e}")
-
-@bot.tree.command(name="dalil", description="Find Qur'anic and Hadith evidence (Arabic + Translation + Sources)")
-@app_commands.describe(
-    topic="Topic or issue to search evidence for",
-    language="Optional: Type target response language (e.g., Sundanese, English, Arabic)"
-)
-async def slash_dalil(
-    interaction: discord.Interaction, 
-    topic: str,
-    language: Optional[str] = None
-):
-    await interaction.response.defer()
-    try:
-        sender_name = interaction.user.display_name
-        search_query = f"matan hadits sahih bukhari muslim ayat quran dalil {topic} quran.kemenag.go.id"
-        web_ref = await asyncio.to_thread(cari_web, search_query)
-        quran_ctx = ambil_konteks_quran_otomatis(topic) # INJEKSI OTOMATIS
-        
-        prompt = (
-            f"[{sender_name}]: Provide authentic Dalil (Qur'an verses conforming to official standards and Sahih Hadiths) for topic: '{topic}'.\n"
-            f"{quran_ctx}\n"
-            f"MANDATORY FORMAT:\n"
-            f"1. Original Arabic Text\n"
-            f"2. Complete Translation\n"
-            f"3. Explicit Reference Source & Kitāb Name (Surah name/number or Hadith Collection)\n\n"
-            f"VERIFIED SEARCH REFERENCES:\n{web_ref}"
-        )
-        if language:
-            prompt += f"\n\n[MANDATORY INSTRUCTION: Force and generate your ENTIRE response strictly in '{language}' language.]"
-
-        jawaban = await asyncio.to_thread(tanya_groq, prompt, MODEL_RINGAN)
-        await kirim_pesan_panjang(interaction, jawaban, mode="slash")
-    except Exception as e:
-        await interaction.followup.send(f"⚠️ An error occurred: {e}")
-
-@bot.tree.command(name="search", description="Search Islamic research references from the web with citations")
-@app_commands.describe(
-    query="Search keywords",
-    language="Optional: Type target response language (e.g., Sundanese, English, Arabic)"
-)
-async def slash_search(
-    interaction: discord.Interaction, 
-    query: str,
-    language: Optional[str] = None
-):
-    await interaction.response.defer()
-    try:
-        sender_name = interaction.user.display_name
-        web_data = await asyncio.to_thread(cari_web, query)
-        quran_ctx = ambil_konteks_quran_otomatis(query) # INJEKSI OTOMATIS
-        
-        full_prompt = (
-            f"[{sender_name}]: Use the following web references to answer.\n"
-            f"{quran_ctx}\n"
-            f"MANDATORY REQUIREMENT: Provide Arabic Dalil and cite explicit sources:\n\n"
-            f"REFERENCES:\n{web_data}\n\nQUESTION: {query}"
-        )
-        if language:
-            full_prompt += f"\n\n[MANDATORY INSTRUCTION: Force and generate your ENTIRE response strictly in '{language}' language.]"
-            
-        jawaban = await asyncio.to_thread(tanya_groq, full_prompt, MODEL_RINGAN)
-        await kirim_pesan_panjang(interaction, jawaban, mode="slash")
-    except Exception as e:
-        await interaction.followup.send(f"⚠️ An error occurred: {e}")
-
-@bot.tree.command(name="test", description="Test Groq API connection, latency, and system health")
-async def slash_test(interaction: discord.Interaction):
-    await interaction.response.defer()
-    try:
-        start_time = time.time()
-        respon = await asyncio.to_thread(tanya_groq, "System test: Provide 1 short Islamic greeting in English.", MODEL_RINGAN)
-        api_latency = round((time.time() - start_time) * 1000)
-        discord_ping = round(bot.latency * 1000)
-        
-        db_status = "Connected & Loaded" if quran_db.arabic_data else "Not Loaded (Fallback Active)"
-
-        status_msg = (
-            "🧪 **[SYSTEM DIAGNOSTIC - ISLAMIC.AI]**\n\n"
-            f"🟢 **Groq API Status:** Connected & Active\n"
-            f"📖 **Quran Dual JSON Database:** `{db_status}`\n"
-            f"⚡ **API Latency:** `{api_latency}ms`\n"
-            f"📡 **Discord Ping:** `{discord_ping}ms`\n"
-            f"🧠 **Active Engine:** Global Dual-JSON Grounding RAG (`llama-3.3-70b-versatile`)\n\n"
-            f"💬 **Output Test Sample:**\n> {respon}"
-        )
-        await interaction.followup.send(status_msg)
-    except Exception as e:
-        await interaction.followup.send(f"⚠️ Diagnostic test failed: {e}")
-
-@bot.tree.command(name="ping", description="Check bot latency status")
-async def slash_ping(interaction: discord.Interaction):
-    latency = round(bot.latency * 1000)
-    await interaction.response.send_message(f"🏓 **Pong!** Islamic.AI latency: `{latency}ms` (Dual JSON Grounding Active)")
-
-if __name__ == "__main__":
-    if not DISCORD_TOKEN:
-        print("❌ ERROR: DISCORD_TOKEN_QURAN is not set in Streamlit Secrets!")
-    else:
-        bot.run(DISCORD_TOKEN)
+    ayat_sampai: Optional[
