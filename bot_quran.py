@@ -6,16 +6,24 @@ import time
 import requests
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 from duckduckgo_search import DDGS
 from typing import Optional
+
+# Safe import untuk Streamlit Secrets
+try:
+    import streamlit as st
+    DISCORD_TOKEN = st.secrets.get("DISCORD_TOKEN_QURAN") or st.secrets.get("DISCORD_TOKEN") or os.getenv("DISCORD_TOKEN_QURAN") or os.getenv("DISCORD_TOKEN")
+    GROQ_API_KEY = st.secrets.get("GROQ_API_KEY_QURAN") or st.secrets.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY_QURAN") or os.getenv("GROQ_API_KEY")
+    STREAMLIT_URL = st.secrets.get("STREAMLIT_URL") or os.getenv("STREAMLIT_URL", "https://nama-app-kamu.streamlit.app")
+except Exception:
+    DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_QURAN") or os.getenv("DISCORD_TOKEN")
+    GROQ_API_KEY = os.getenv("GROQ_API_KEY_QURAN") or os.getenv("GROQ_API_KEY")
+    STREAMLIT_URL = os.getenv("STREAMLIT_URL", "https://nama-app-kamu.streamlit.app")
 
 # ---------------------------------------------------------
 # Token & API Configuration
 # ---------------------------------------------------------
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_QURAN")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY_QURAN") or os.getenv("GROQ_API_KEY")
-
 # 3-Model Routing Strategy (Groq)
 MODEL_BERAT = "openai/gpt-oss-120b"          # Primary Heavy Model (Tafsir & Fiqh)
 MODEL_RINGAN = "llama-3.3-70b-versatile"    # High-Intelligence Model (Anti-Hallucination)
@@ -173,6 +181,7 @@ class QuranDB:
             if v:
                 results.append(v)
         return results
+
 # Inisialisasi Database Menggunakan 2 File JSON Milikmu
 quran_db = QuranDB(
     arabic_path="qpc-hafs.json", 
@@ -334,12 +343,29 @@ async def kirim_pesan_panjang(target, text, mode="reply"):
             await target.followup.send(chunk)
 
 # ---------------------------------------------------------
-# Discord Bot Initialization & Events
+# Discord Bot Initialization & Background Tasks
 # ---------------------------------------------------------
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# --- TASK LOOP: AUTO KEEP-ALIVE UNTUK STREAMLIT (SETIAP 2 JAM) ---
+@tasks.loop(hours=2)
+async def keep_alive_ping():
+    if STREAMLIT_URL and "streamlit.app" in STREAMLIT_URL:
+        try:
+            res = await asyncio.to_thread(requests.get, STREAMLIT_URL, timeout=15)
+            print(f"⏰ [Keep-Alive] Ping ke Streamlit ({STREAMLIT_URL}) berhasil! Status Code: {res.status_code}")
+        except Exception as e:
+            print(f"⚠️ [Keep-Alive] Gagal melakukan ping ke Streamlit: {e}")
+
+@keep_alive_ping.before_loop
+async def before_keep_alive():
+    await bot.wait_until_ready()
+
+# ---------------------------------------------------------
+# Discord Events
+# ---------------------------------------------------------
 @bot.event
 async def on_ready():
     try:
@@ -350,6 +376,11 @@ async def on_ready():
         
     await bot.change_presence(activity=discord.Game(name="/help | /quran | /fiqh | /tafsir"))
     print(f"✅ Islamic.AI Bot ({bot.user}) is Online!")
+
+    # Jalankan loop ping otomatis setiap 2 jam jika belum aktif
+    if not keep_alive_ping.is_running():
+        keep_alive_ping.start()
+        print("🚀 Auto Keep-Alive Streamlit task started (Runs every 2 hours)!")
 
 @bot.event
 async def on_message(message):
@@ -493,6 +524,7 @@ async def slash_quran(
     embed.set_footer(text="Source: Official Local JSON Database (Zero AI Hallucination)")
 
     await interaction.followup.send(embed=embed)
+
 @bot.tree.command(name="ask", description="Ask anything about Islam (Arabic Dalil & Book Citations Included)")
 @app_commands.describe(
     prompt="Your question or topic",
@@ -756,7 +788,8 @@ async def slash_test(interaction: discord.Interaction):
             f"📖 **Quran Dual JSON Database:** `{db_status}`\n"
             f"⚡ **API Latency:** `{api_latency}ms`\n"
             f"📡 **Discord Ping:** `{discord_ping}ms`\n"
-            f"🧠 **Active Engine:** Global Dual-JSON Grounding RAG (`llama-3.3-70b-versatile`)\n\n"
+            f"🧠 **Active Engine:** Global Dual-JSON Grounding RAG (`llama-3.3-70b-versatile`)\n"
+            f"⏰ **Streamlit Keep-Alive:** Active (`{STREAMLIT_URL}`)\n\n"
             f"💬 **Output Test Sample:**\n> {respon}"
         )
         await interaction.followup.send(status_msg)
@@ -770,6 +803,6 @@ async def slash_ping(interaction: discord.Interaction):
 
 if __name__ == "__main__":
     if not DISCORD_TOKEN:
-        print("❌ ERROR: DISCORD_TOKEN_QURAN is not set in Streamlit Secrets!")
+        print("❌ ERROR: DISCORD_TOKEN_QURAN is not set in Streamlit Secrets or Environment!")
     else:
         bot.run(DISCORD_TOKEN)
