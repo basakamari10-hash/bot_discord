@@ -57,14 +57,14 @@ class Config:
     PORT: int = field(default_factory=lambda: int(os.getenv("PORT", "8080")))
     
     # 3-Model Routing Strategy (Groq)
-    MODEL_HEAVY: str = "openai/gpt-oss-120b"          # Heavy Model (Tafsir & Fiqh)
-    MODEL_LIGHT: str = "llama-3.3-70b-versatile"     # High-Intelligence Model
+    MODEL_HEAVY: str = "openai/gpt-oss-120b"          # Heavy Model (Tafsir, Fiqh, Dalil & Complex Q&A)
+    MODEL_LIGHT: str = "llama-3.3-70b-versatile"     # High-Intelligence Fast Model (Hadith, Dua, Search)
     MODEL_FALLBACK: str = "llama-3.1-8b-instant"     # Emergency Fallback
     
     # Model Fallback Priority List
     GROQ_MODELS: List[str] = field(default_factory=lambda: [
-        "llama-3.3-70b-versatile",
         "openai/gpt-oss-120b",
+        "llama-3.3-70b-versatile",
         "llama-3.1-70b-versatile",
         "llama-3.1-8b-instant"
     ])
@@ -547,10 +547,11 @@ class SmartSearch:
                     res_list = []
                     domains = cls.CATEGORY_DOMAINS.get(category, [])
                     
-                    # For Hadith category, strictly enforce Sunnah.com grounding
+                    # Strictly enforce grounded domains for Hadith & Tafsir
                     if category == SearchCategory.HADITH:
-                        site_filter = "site:sunnah.com OR site:dorar.net"
-                        search_term = f"site:sunnah.com Hadith matan text {query_clean}".strip()
+                        search_term = f"site:sunnah.com OR site:dorar.net Hadith matan text {query_clean}".strip()
+                    elif category == SearchCategory.TAFSIR:
+                        search_term = f"site:tafsir.app OR site:quran.com Tafsir exegesis Ibn Kathir {query_clean}".strip()
                     else:
                         site_filter = " OR ".join([f"site:{d}" for d in domains])
                         search_term = f"quran verse hadith authentic fiqh {query_clean} {site_filter}".strip()
@@ -570,6 +571,8 @@ class SmartSearch:
             try:
                 if category == SearchCategory.HADITH:
                     full_query = f"site:sunnah.com {query_clean}".strip()
+                elif category == SearchCategory.TAFSIR:
+                    full_query = f"site:tafsir.app OR site:quran.com {query_clean}".strip()
                 else:
                     domains = cls.CATEGORY_DOMAINS.get(category, [])
                     site_filter = " OR ".join([f"site:{d}" for d in domains])
@@ -594,8 +597,8 @@ class SmartSearch:
             except Exception as e:
                 LOGGER.warning(f"HTTP Search Fallback Exception: {e}")
 
-        header_prefix = "[VERIFIED SUNNAH.COM HADITH DATA INJECTED]\n" if category == SearchCategory.HADITH else "[VERIFIED WEB REFERENCES INJECTED]\n"
-        output = header_prefix + "\n\n".join(results) if results else "NO VERIFIED WEB REFERENCES FOUND. Provide answer using general Qur'an/Hadith principles with Arabic text and cite general Fiqh book sources."
+        header_prefix = f"[VERIFIED {category.name} DATA INJECTED FROM AUTHENTIC REPOSITORIES]\n"
+        output = header_prefix + "\n\n".join(results) if results else "NO VERIFIED WEB REFERENCES FOUND. Provide answer using general Qur'an/Hadith principles with Arabic text and cite general Fiqh/Tafsir book sources."
         await GLOBAL_CACHE.set(cache_key, output, ttl=CONFIG.CACHE_TTL_SEARCH)
         return output
 #endregion
@@ -890,10 +893,11 @@ async def on_message(message: discord.Message):
                 f"[MANDATORY REQUIREMENT: Your answer MUST contain: (1) Relevant Arabic Dalil text + translation grounded in the provided JSON, and (2) Explicit book/scholarly source citations.]{lang_instruction}"
             )
 
+            # Direct Chat Mentions / Replies use Heavy Model for deep reasoning
             jawaban = await BOT.groq_client.chat_completion(
                 prompt_text=prompt,
                 system_prompt=PromptBuilder.SYSTEM_PROMPT,
-                preferred_model=CONFIG.MODEL_LIGHT
+                preferred_model=CONFIG.MODEL_HEAVY
             )
             await send_long_message(message, jawaban, mode="reply")
 
@@ -974,9 +978,10 @@ async def process_slash_query(
     interaction: discord.Interaction,
     prompt: str,
     language: Optional[str] = None,
-    model_override: str = CONFIG.MODEL_LIGHT
+    model_override: str = CONFIG.MODEL_LIGHT,
+    command_type: str = "general"
 ):
-    """Generic processor for slash commands with rate limiting and caching."""
+    """Generic processor for slash commands with rate limiting, caching, and strict command-type locking."""
     user_id = interaction.user.id
     
     # Check rate limit
@@ -994,11 +999,31 @@ async def process_slash_query(
         chosen_lang = language or BOT.user_languages.get(user_id)
         lang_instruction = PromptBuilder.create_language_instruction(chosen_lang)
 
+        # Build Command Type Mandate Instruction
+        type_instruction = ""
+        if command_type == "hadith":
+            type_instruction = (
+                "\n\n[STRICT COMMAND MANDATE: HADITH SPECIFIC (/hadith)]\n"
+                "1. THIS IS EXCLUSIVELY A HADITH COMMAND.\n"
+                "2. The main response MUST focus 100% on Authentic Hadiths (Arabic Matan + Translation + Collection Narrator from Sunnah.com).\n"
+                "3. DO NOT output Quranic verses as the main headline or primary answer. Keep the response strictly centred around Hadiths!"
+            )
+        elif command_type == "tafsir":
+            type_instruction = (
+                "\n\n[STRICT COMMAND MANDATE: TAFSIR SPECIFIC (/tafsir)]\n"
+                "1. Focus strictly on Qur'anic exegesis, Asbabun Nuzul, and commentary from recognized Tafsir books."
+            )
+        elif command_type == "fiqh":
+            type_instruction = (
+                "\n\n[STRICT COMMAND MANDATE: FIQH SPECIFIC (/fiqh)]\n"
+                "1. Focus strictly on Islamic jurisprudence rulings, Madhhab perspectives, and Fiqh book citations."
+            )
+
         final_prompt = (
             f"[{sender_name}]: {prompt}\n\n"
             f"VERIFIED SEARCH REFERENCES:\n{web_ref}\n"
             f"{quran_ctx}\n"
-            f"[MANDATORY REQUIREMENT: You MUST include: (1) Relevant Arabic Dalil text with translation grounded in the provided JSON dataset, and (2) Explicit classical/contemporary Fiqh or Tafsir book citation.]{lang_instruction}"
+            f"[MANDATORY REQUIREMENT: You MUST include: (1) Relevant Arabic Dalil text with translation grounded in the provided JSON dataset, and (2) Explicit classical/contemporary Fiqh or Tafsir book citation.]{type_instruction}{lang_instruction}"
         )
 
         jawaban = await BOT.groq_client.chat_completion(
@@ -1071,12 +1096,13 @@ async def slash_ask(
     language: Optional[str] = None
 ):
     await interaction.response.defer()
-    await process_slash_query(interaction, prompt, language, CONFIG.MODEL_LIGHT)
+    # Uses MODEL_HEAVY for deep reasoning on general Islamic questions
+    await process_slash_query(interaction, prompt, language, CONFIG.MODEL_HEAVY, command_type="ask")
 
-@BOT.tree.command(name="tafsir", description="Detailed Qur'anic exegesis (Injected with Official JSON Data)")
+@BOT.tree.command(name="tafsir", description="Detailed Qur'anic exegesis (Injected with Official JSON Data & Tafsir Sources)")
 @app_commands.describe(
     verse="Verse reference (e.g., '2:255', 'An-Nur 2', 'Sourate Al-Baqara 255')",
-    source="Optional: Tafsir book (Ibn Kathir, Jalalayn, etc.)",
+    source="Optional: Tafsir book (Ibn Kathir, Jalalayn, As-Sa'di, etc.)",
     language="Optional: Type target response language (e.g., English, French, Arabic, Spanish)"
 )
 async def slash_tafsir(
@@ -1086,8 +1112,15 @@ async def slash_tafsir(
     language: Optional[str] = None
 ):
     await interaction.response.defer()
-    query = f"Provide a comprehensive tafsir for verse {verse}. Primary reference requested: {source if source else 'Tafsir Ibn Kathir / Jalalayn'}."
-    await process_slash_query(interaction, query, language, CONFIG.MODEL_HEAVY)
+    primary_source = source if source else "Tafsir Ibn Kathir / Tafsir al-Jalalayn"
+    query = (
+        f"Provide a comprehensive, highly authentic Tafsir explanation for verse '{verse}'. "
+        f"Primary Tafsir requested: '{primary_source}'. "
+        f"Structure the response clearly: (1) Injected Arabic verse & translation, (2) Asbabun Nuzul (if authentic), "
+        f"(3) Concise interpretation according to {primary_source}, and (4) Key spiritual/practical lessons."
+    )
+    # Uses MODEL_HEAVY for deep Qur'anic exegesis
+    await process_slash_query(interaction, query, language, CONFIG.MODEL_HEAVY, command_type="tafsir")
 
 @BOT.tree.command(name="fiqh", description="Ask Fiqh rulings with Arabic Dalil & Kitāb sources")
 @app_commands.describe(
@@ -1115,7 +1148,8 @@ async def slash_fiqh(
     await interaction.response.defer()
     chosen_madhhab = madhhab.value if madhhab else "comparative_all"
     query = f"Fiqh Question: '{question}'. Requested Madhhab: {chosen_madhhab.upper()}."
-    await process_slash_query(interaction, query, language, CONFIG.MODEL_HEAVY)
+    # Uses MODEL_HEAVY for complex comparative jurisprudence
+    await process_slash_query(interaction, query, language, CONFIG.MODEL_HEAVY, command_type="fiqh")
 
 @BOT.tree.command(name="hadith", description="Search authentic Hadiths with Arabic Matan & Collection Citations from Sunnah.com")
 @app_commands.describe(
@@ -1131,7 +1165,8 @@ async def slash_hadith(
 ):
     await interaction.response.defer()
     query = f"Hadith matan and text regarding '{topic}' in {book if book else 'Sahih Bukhari Muslim Kutubus Sittah'} site:sunnah.com."
-    await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT)
+    # Uses MODEL_LIGHT for fast text retrieval and translation from Sunnah.com
+    await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT, command_type="hadith")
 
 @BOT.tree.command(name="dua", description="Search authentic Duas and Adhkar with Arabic Text & Sources")
 @app_commands.describe(
@@ -1145,7 +1180,7 @@ async def slash_dua(
 ):
     await interaction.response.defer()
     query = f"Provide authentic Duas for topic/situation: '{topic}'."
-    await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT)
+    await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT, command_type="dua")
 
 @BOT.tree.command(name="dalil", description="Find Qur'anic and Hadith evidence (Arabic + Translation + Sources)")
 @app_commands.describe(
@@ -1159,7 +1194,8 @@ async def slash_dalil(
 ):
     await interaction.response.defer()
     query = f"Provide authentic Dalil (Qur'an verses and Sahih Hadiths from sunnah.com) for topic: '{topic}'."
-    await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT)
+    # Uses MODEL_HEAVY for comprehensive cross-referencing of evidence
+    await process_slash_query(interaction, query, language, CONFIG.MODEL_HEAVY, command_type="dalil")
 
 @BOT.tree.command(name="search", description="Search Islamic research references from the web with citations")
 @app_commands.describe(
@@ -1172,7 +1208,7 @@ async def slash_search(
     language: Optional[str] = None
 ):
     await interaction.response.defer()
-    await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT)
+    await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT, command_type="search")
 
 @BOT.tree.command(name="language", description="Set your preferred default response language")
 @app_commands.describe(language="Language name e.g. English, French, Arabic, Spanish, German")
@@ -1208,7 +1244,8 @@ async def slash_test(interaction: discord.Interaction, language: Optional[str] =
             f"📖 **Quran Dual JSON Database:** `{db_status}`\n"
             f"⚡ **API Latency:** `{api_latency}ms`\n"
             f"📡 **Discord Ping:** `{discord_ping}ms`\n"
-            f"🧠 **Active Engine:** Global Dual-JSON Grounding RAG (`{CONFIG.MODEL_LIGHT}`)\n"
+            f"🧠 **Heavy Model:** `{CONFIG.MODEL_HEAVY}` (Fiqh/Tafsir/Dalil/Ask)\n"
+            f"⚡ **Light Model:** `{CONFIG.MODEL_LIGHT}` (Hadith/Dua/Search)\n"
             f"⏰ **Streamlit Keep-Alive:** Active (`{CONFIG.STREAMLIT_URL}`)\n\n"
             f"💬 **Output Test Sample ({target_lang}):**\n> {respon}"
         )
