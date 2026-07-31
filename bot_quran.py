@@ -179,11 +179,11 @@ SURAH_MAP: Dict[str, int] = {
     "hijr": 15, "الحجر": 15,
     "nahl": 16, "النحل": 16,
     "isra": 17, "الإسراء": 17,
-    "kahf": 18, "kahfi": 18, "Kehf": 18, "الكهف": 18,
+    "kahf": 18, "kahfi": 18, "kehf": 18, "الكهف": 18,
     "maryam": 19, "mary": 19, "مريم": 19,
     "taha": 20, "ta-ha": 20, "طه": 20,
     # 21-30
-    "anbiya": 21, "anbiya'": 21, "الأنبياء": 21,
+    "anbiya": 21, "anbiya'": 21, "الأنبيائ": 21,
     "hajj": 22, "hac": 22, "الحج": 22,
     "muminun": 23, "mu'minun": 23, "المؤمنون": 23,
     "nur": 24, "noor": 24, "النور": 24,
@@ -675,7 +675,7 @@ MANDATORY DALIL & CITATION RULES (STRICTLY ENFORCED FOR ALL COMMANDS & CHATS):
 1. MANDATORY EVIDENCE (DALIL) & SOURCE CITATION IN EVERY RESPONSE:
    - EVERY SINGLE RESPONSE MUST INCLUDE:
      a) Clear Evidence / Dalil (Original Arabic text/Matan + Translation derived strictly from official reference data).
-     b) Explicit Source Citation (e.g., "Surah Al-Baqarah: 183", "Sahih al-Bukhari No. 1", "Tafsir Ibn Kathir", "Kitab Al-Majmu' by Imam an-Nawawi", or "Kitab Fiqh al-Sunnah").
+     b) Explicit Source Citation (e.g., "Surah Al-Baqarah: 183", "Sahih al-Bukhari No. 1", "Tafsir Ibn Kathir", "Kitab Al-Majmu' Sharh al-Muhadhdhab by Imam an-Nawawi", or "Kitab Fiqh al-Sunnah").
    - NEVER provide a plain opinion without grounding it in Qur'an/Hadith Dalil and recognized scholarly/kitāb sources.
 
 2. STRICT TARGET LANGUAGE MANDATE (ZERO CONTEXT LEAKAGE & NO MIXING):
@@ -702,6 +702,7 @@ MANDATORY DALIL & CITATION RULES (STRICTLY ENFORCED FOR ALL COMMANDS & CHATS):
    - NEVER WRITE OR GENERATE QURANIC ARABIC TEXT FROM MEMORY: You are strictly forbidden from generating Arabic Quranic text by yourself. Whenever official Quran data is provided in the prompt context, you MUST strictly use that exact text verbatim.
 
 8. STRICT HADITH MATAN & QUOTATION GUARDRAIL (CRITICAL HADITH RULE):
+   - CONTEXTUAL MATCHING MANDATE: The Hadith quoted MUST explicitly match the core context of the user's question (e.g., if asking about greeting/salam, use Hadiths specifically mentioning 'salam', NOT general brotherhood Hadiths).
    - NO FABRICATED HADITH QUOTES: Do NOT place Hadith matan inside quotation marks ("...") unless the exact, word-for-word text is explicitly provided in the verified web search references.
    - DIRECT QUOTE vs. GENERAL MEANING: If the exact verbatim Hadith matan is NOT present in the search reference, state the response as "General Meaning of Hadith" adapted strictly to your TARGET LANGUAGE. Translate the Hadith content fully into that target language.
    - STRICT HADITH NUMBERING: Never invent or guess Hadith numbers. If the search context does not verify the exact Hadith number, cite ONLY the collection name (e.g., "Sahih al-Bukhari, Book of Prophets").
