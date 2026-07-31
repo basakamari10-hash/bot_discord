@@ -546,13 +546,19 @@ class SmartSearch:
                 def _ddg_sync():
                     res_list = []
                     domains = cls.CATEGORY_DOMAINS.get(category, [])
-                    site_filter = " OR ".join([f"site:{d}" for d in domains])
-                    search_term = f"quran verse hadith authentic fiqh {query_clean} {site_filter}".strip()
+                    
+                    # For Hadith category, strictly enforce Sunnah.com grounding
+                    if category == SearchCategory.HADITH:
+                        site_filter = "site:sunnah.com OR site:dorar.net"
+                        search_term = f"site:sunnah.com Hadith matan text {query_clean}".strip()
+                    else:
+                        site_filter = " OR ".join([f"site:{d}" for d in domains])
+                        search_term = f"quran verse hadith authentic fiqh {query_clean} {site_filter}".strip()
                     
                     with DDGS() as ddgs:
                         res = ddgs.text(search_term, max_results=4)
                         for r in res:
-                            res_list.append(f"Title: {r['title']}\nContent: {r['body']}")
+                            res_list.append(f"Source/Title: {r['title']}\nVerified Content: {r['body']}")
                     return res_list
 
                 results = await asyncio.to_thread(_ddg_sync)
@@ -562,9 +568,13 @@ class SmartSearch:
         # Attempt 2: Direct HTTP search fallback via aiohttp
         if not results:
             try:
-                domains = cls.CATEGORY_DOMAINS.get(category, [])
-                site_filter = " OR ".join([f"site:{d}" for d in domains])
-                full_query = f"{query_clean} {site_filter}".strip()
+                if category == SearchCategory.HADITH:
+                    full_query = f"site:sunnah.com {query_clean}".strip()
+                else:
+                    domains = cls.CATEGORY_DOMAINS.get(category, [])
+                    site_filter = " OR ".join([f"site:{d}" for d in domains])
+                    full_query = f"{query_clean} {site_filter}".strip()
+                    
                 url = f"https://lite.duckduckgo.com/lite/"
                 headers = {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -580,11 +590,12 @@ class SmartSearch:
                         for i in range(min(len(snippets), 4)):
                             title = re.sub(r'<[^>]+>', '', links[i][1]).strip() if i < len(links) else "Search Result"
                             snippet = re.sub(r'<[^>]+>', '', snippets[i]).strip()
-                            results.append(f"Title: {title}\nContent: {snippet}")
+                            results.append(f"Source/Title: {title}\nVerified Content: {snippet}")
             except Exception as e:
                 LOGGER.warning(f"HTTP Search Fallback Exception: {e}")
 
-        output = "\n\n".join(results) if results else "NO VERIFIED WEB REFERENCES FOUND. Provide answer using general Qur'an/Hadith principles with Arabic text and cite general Fiqh book sources."
+        header_prefix = "[VERIFIED SUNNAH.COM HADITH DATA INJECTED]\n" if category == SearchCategory.HADITH else "[VERIFIED WEB REFERENCES INJECTED]\n"
+        output = header_prefix + "\n\n".join(results) if results else "NO VERIFIED WEB REFERENCES FOUND. Provide answer using general Qur'an/Hadith principles with Arabic text and cite general Fiqh book sources."
         await GLOBAL_CACHE.set(cache_key, output, ttl=CONFIG.CACHE_TTL_SEARCH)
         return output
 #endregion
@@ -703,11 +714,11 @@ MANDATORY DALIL & CITATION RULES (STRICTLY ENFORCED FOR ALL COMMANDS & CHATS):
    - IF NO OFFICIAL QURAN DATA IS INJECTED IN THE PROMPT BELOW: YOU ARE ABSOLUTELY FORBIDDEN FROM WRITING ANY ARABIC QURANIC TEXT FROM MEMORY.
    - Simply state the meaning and Surah reference in the target language (e.g., "Sebagaimana firman Allah dalam QS. An-Nisa: 86..."). DO NOT write the Arabic text for Quran verses unless provided in context!
 
-8. STRICT HADITH MATAN & QUOTATION GUARDRAIL:
-   - CONTEXTUAL MATCHING MANDATE: The Hadith quoted MUST explicitly match the core context of the user's question (e.g., if asking about greeting/salam, use Hadiths specifically mentioning 'salam', NOT general brotherhood Hadiths).
-   - HADITH ARABIC TEXT: You MAY provide authentic Arabic Hadith matan IF verified in the search references below.
-   - NATURAL MEANING TRANSLATION: If conveying the general meaning of a Hadith without exact verbatim text, state it naturally in the target language (e.g., "Dalam makna Hadits diriwayatkan bahwa..." or "In a Hadith it is reported that..."). NEVER write raw literal English labels like 'General Meaning of Hadith'.
-   - STRICT HADITH NUMBERING: Never invent or guess Hadith numbers. If the search context does not verify the exact Hadith number, cite ONLY the collection name (e.g., "Sahih al-Bukhari, Book of Prophets").
+8. STRICT HADITH MATAN & TAKHRIJ NARRATOR GUARDRAIL (CRITICAL HADITH RULE):
+   - CONTEXTUAL MATCHING MANDATE: The Hadith quoted MUST explicitly match the core context of the user's question.
+   - ABSOLUTE TAKHRIJ FABRICATION BAN: DO NOT assign Hadiths to 'Bukhari', 'Muslim', or 'Muttafaq 'Alayh' unless explicitly verified in the Sunnah.com injected search references below.
+   - UNVERIFIED NARRATOR GUARDRAIL: If the exact Hadith collector/narrator is NOT verified in the injected context, cite ONLY as "Diriwayatkan dalam riwayat Hadits bahwa..." or "In a Hadith report it is stated that...". DO NOT guess narrator names from memory!
+   - NATURAL MEANING TRANSLATION: If conveying general meaning, state it naturally in the target language without English meta-labels.
 
 9. MANDATORY DISCLAIMER:
    - Always end with a short reminder in the target response language to consult qualified Islamic scholars for official fatwas on complex or modern issues.
@@ -1106,7 +1117,7 @@ async def slash_fiqh(
     query = f"Fiqh Question: '{question}'. Requested Madhhab: {chosen_madhhab.upper()}."
     await process_slash_query(interaction, query, language, CONFIG.MODEL_HEAVY)
 
-@BOT.tree.command(name="hadith", description="Search authentic Hadiths with Arabic Matan & Collection Citations")
+@BOT.tree.command(name="hadith", description="Search authentic Hadiths with Arabic Matan & Collection Citations from Sunnah.com")
 @app_commands.describe(
     topic="Hadith topic or keyword",
     book="Optional: Hadith Collection (Bukhari, Muslim, Abu Dawud, etc.)",
@@ -1119,7 +1130,7 @@ async def slash_hadith(
     language: Optional[str] = None
 ):
     await interaction.response.defer()
-    query = f"Hadith matan and text about '{topic}' in {book if book else 'Sahih Bukhari Muslim Kutubus Sittah'}."
+    query = f"Hadith matan and text regarding '{topic}' in {book if book else 'Sahih Bukhari Muslim Kutubus Sittah'} site:sunnah.com."
     await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT)
 
 @BOT.tree.command(name="dua", description="Search authentic Duas and Adhkar with Arabic Text & Sources")
@@ -1147,7 +1158,7 @@ async def slash_dalil(
     language: Optional[str] = None
 ):
     await interaction.response.defer()
-    query = f"Provide authentic Dalil (Qur'an verses and Sahih Hadiths) for topic: '{topic}'."
+    query = f"Provide authentic Dalil (Qur'an verses and Sahih Hadiths from sunnah.com) for topic: '{topic}'."
     await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT)
 
 @BOT.tree.command(name="search", description="Search Islamic research references from the web with citations")
