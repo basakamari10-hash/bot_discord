@@ -1,6 +1,6 @@
 # ==============================================================================
 # bot_quran.py - Production-Ready Islamic & Quran Discord AI Bot
-# Multilingual Surah Parsing & Dual JSON Grounding (Zero Hallucination RAG)
+# Multilingual Surah Parsing, Dual JSON Grounding & Sandwich RAG
 # ==============================================================================
 
 #region Imports
@@ -752,20 +752,23 @@ MANDATORY DALIL & CITATION RULES (STRICTLY ENFORCED FOR ALL COMMANDS & CHATS):
 
     @staticmethod
     def create_language_instruction(language_param: Optional[str]) -> str:
-        """Enforces language translation mandates and forbids meta outputs."""
+        """Enforces strict language matching and overrules English RAG search bias."""
         if language_param and language_param.strip():
+            target = language_param.strip()
             return (
-                f"\n\n[STRICT TARGET LANGUAGE OVERRIDE - CRITICAL]\n"
-                f"1. Target Language: FORCED to '{language_param.strip()}'.\n"
-                f"2. Write EVERY SINGLE WORD of your response in '{language_param.strip()}'.\n"
-                f"3. DO NOT output meta-text or intro notes like 'Language detected' or 'Bahasa telah terdeteksi'. Start directly with the answer!"
+                f"🚨 [CRITICAL LANGUAGE OVERRIDE — MANDATORY] 🚨\n"
+                f"1. TARGET LANGUAGE: You MUST generate your ENTIRE response in '{target}' ONLY.\n"
+                f"2. FULL TRANSLATION MANDATE: Even though the injected search references and context below are in English, "
+                f"you ARE STRICTLY REQUIRED to translate EVERYTHING (Quran explanations, Hadiths, Fiqh terms, tables, bullet points, and footers) into '{target}'.\n"
+                f"3. ABSOLUTE NO ENGLISH BAN: Do NOT output the explanation in English. Write strictly in '{target}'!"
             )
         else:
             return (
-                "\n\n[STRICT AUTOMATIC LANGUAGE MATCHING - CRITICAL]\n"
-                "1. Automatically detect the exact language used in the user's prompt/question above.\n"
-                "2. Write EVERY SINGLE WORD of your response in that SAME detected language (e.g., English, French, Spanish, German, Arabic, etc.).\n"
-                "3. CRITICAL: DO NOT write any introductory message about language detection (e.g., DO NOT write 'Bahasa Indonesia telah terdeteksi'). Start your response directly!"
+                f"🚨 [CRITICAL AUTOMATIC LANGUAGE MATCHING — MANDATORY] 🚨\n"
+                f"1. Detect the primary language used in the USER's prompt/question.\n"
+                f"2. You MUST write your ENTIRE response strictly in that SAME detected language (e.g., Japanese, Indonesian, French, etc.).\n"
+                f"3. Even if search references below are in English, translate ALL explanations, tables, and footers to the USER'S language.\n"
+                f"4. DO NOT default to English!"
             )
 
     @staticmethod
@@ -867,52 +870,63 @@ async def on_message(message: discord.Message):
     if message.author.bot:
         return
 
-    # Check for direct Verse Shortcut (e.g., 2:255, 1:1-7, An-Nur 2, Sourate Al-Baqara 255) -> 100% JSON Pure Retrieval
-    parsed_verse = QURAN_DB.parse_verse_key(message.content.strip())
-    if parsed_verse and len(message.content.strip().split()) <= 5:
+    content = message.content.strip()
+
+    # Check for direct Verse Shortcut (e.g., 2:255, 1:1-7) -> 100% JSON Pure Retrieval
+    parsed_verse = QURAN_DB.parse_verse_key(content)
+    if parsed_verse and len(content.split()) <= 5:
         surah_num, start_a, end_a = parsed_verse
         await send_quran_embed(message.channel, surah_num, start_a, end_a, reply_msg=message)
         return
 
-    # Check mention or reply to bot
+    # Robust Check for mention or reply to bot
+    is_mentioned = BOT.user in message.mentions
     is_reply_to_bot = False
+    
     if message.reference and message.reference.message_id:
         try:
             ref_msg = await message.channel.fetch_message(message.reference.message_id)
-            if ref_msg.author == BOT.user:
+            if ref_msg and ref_msg.author == BOT.user:
                 is_reply_to_bot = True
-        except Exception:
-            pass
+        except Exception as e:
+            LOGGER.warning(f"Failed to fetch reference message (Check Read Message History permission): {e}")
 
-    is_mentioned = BOT.user in message.mentions
-
+    # Process tag/reply using RAG & HEAVY MODEL
     if is_reply_to_bot or is_mentioned:
         async with message.channel.typing():
+            # Clean bot mention tags
+            clean_prompt = content.replace(f"<@{BOT.user.id}>", "").replace(f"<@!{BOT.user.id}>", "").strip()
+            if not clean_prompt:
+                clean_prompt = "Assalamu'alaikum, is there anything you can help me with?"
+
             raw_history = []
             async for msg in message.channel.history(limit=8):
-                clean_text = msg.content.replace(f"<@{BOT.user.id}>", "").strip()
-                if not clean_text:
+                h_text = msg.content.replace(f"<@{BOT.user.id}>", "").replace(f"<@!{BOT.user.id}>", "").strip()
+                if not h_text:
                     continue
                 if msg.author == BOT.user:
-                    raw_history.append(f"Assistant: {clean_text}")
+                    raw_history.append(f"Assistant: {h_text}")
                 elif not msg.author.bot:
                     sender_name = msg.author.display_name
-                    raw_history.append(f"User [{sender_name}]: {clean_text}")
+                    raw_history.append(f"User [{sender_name}]: {h_text}")
 
             raw_history.reverse()
-            last_prompt = raw_history[-1] if raw_history else message.content
             
-            web_ref = await SmartSearch.execute_search(BOT.session, last_prompt)
-            quran_ctx = PromptBuilder.extract_quran_context(last_prompt)
+            web_ref = await SmartSearch.execute_search(BOT.session, clean_prompt)
+            quran_ctx = PromptBuilder.extract_quran_context(clean_prompt)
             
             user_lang = BOT.user_languages.get(message.author.id)
             lang_instruction = PromptBuilder.create_language_instruction(user_lang)
 
+            # Sandwich Prompt: Enforce Language Rule at Top & Bottom
             prompt = (
+                f"{lang_instruction}\n\n"
+                f"USER PROMPT: {clean_prompt}\n\n"
                 f"VERIFIED WEB REFERENCES:\n{web_ref}\n\n"
                 f"{quran_ctx}\n"
                 f"CHAT HISTORY:\n" + "\n".join(raw_history) + "\n\n"
-                f"[MANDATORY REQUIREMENT: Your answer MUST contain: (1) Relevant Arabic Dalil text + translation grounded in the provided JSON, and (2) Explicit book/scholarly source citations.]{lang_instruction}"
+                f"[MANDATORY REQUIREMENT: Your answer MUST contain: (1) Relevant Arabic Dalil text + translation grounded in the provided JSON, and (2) Explicit book/scholarly source citations.]\n\n"
+                f"REMINDER AGAIN:\n{lang_instruction}"
             )
 
             jawaban = await BOT.groq_client.chat_completion(
@@ -921,6 +935,7 @@ async def on_message(message: discord.Message):
                 preferred_model=CONFIG.MODEL_HEAVY
             )
             await send_long_message(message, jawaban, mode="reply")
+            return # Exit successfully
 
     await BOT.process_commands(message)
 #endregion
@@ -1040,11 +1055,14 @@ async def process_slash_query(
                 "1. Focus strictly on Islamic jurisprudence rulings, Madhhab perspectives, and Fiqh book citations from verified fatwa repositories."
             )
 
+        # Sandwich Prompt: Enforce Language Rule at Top & Bottom
         final_prompt = (
-            f"[{sender_name}]: {prompt}\n\n"
-            f"VERIFIED SEARCH REFERENCES:\n{web_ref}\n"
+            f"{lang_instruction}\n\n"
+            f"USER PROMPT [{sender_name}]: {prompt}\n\n"
+            f"VERIFIED SEARCH REFERENCES:\n{web_ref}\n\n"
             f"{quran_ctx}\n"
-            f"[MANDATORY REQUIREMENT: You MUST include: (1) Relevant Arabic Dalil text with translation grounded in the provided JSON dataset, and (2) Explicit classical/contemporary Fiqh or Tafsir book citation.]{type_instruction}{lang_instruction}"
+            f"[MANDATORY REQUIREMENT: You MUST include: (1) Relevant Arabic Dalil text with translation grounded in the provided JSON dataset, and (2) Explicit classical/contemporary Fiqh or Tafsir book citation.]{type_instruction}\n\n"
+            f"REMINDER AGAIN:\n{lang_instruction}"
         )
 
         jawaban = await BOT.groq_client.chat_completion(
