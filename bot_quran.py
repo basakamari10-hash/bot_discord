@@ -1119,7 +1119,7 @@ async def slash_hadith(
     language: Optional[str] = None
 ):
     await interaction.response.defer()
-    query = f"Search authentic Hadiths regarding '{topic}'. Requested Collection: {book if book else 'Kutubus Sittah'}."
+    query = f"Hadith matan and text about '{topic}' in {book if book else 'Sahih Bukhari Muslim Kutubus Sittah'}."
     await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT)
 
 @BOT.tree.command(name="dua", description="Search authentic Duas and Adhkar with Arabic Text & Sources")
