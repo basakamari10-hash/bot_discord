@@ -303,7 +303,7 @@ SURAH_OFFICIAL_NAMES = [
 ]
 #endregion
 
-#region Quran Database
+#region Quran Database (Zero AI Hallucination - Local RAM Engine)
 class QuranDatabase:
     """
     Quran DB Engine supporting dual JSON files (qpc-hafs.json & english-wbw-translation.json).
@@ -477,7 +477,7 @@ class QuranDatabase:
 QURAN_DB = QuranDatabase()
 #endregion
 
-#region Search
+#region Search (Multi-Domain Cluster Anchoring)
 class SearchCategory(Enum):
     QURAN = auto()
     HADITH = auto()
@@ -491,17 +491,36 @@ class SearchCategory(Enum):
     GENERAL = auto()
 
 class SmartSearch:
-    """Smart web search execution with site filters and clean query sanitation."""
+    """Smart web search execution anchored to multi-domain site clusters."""
 
+    # MULTI-DOMAIN ANCHOR CLUSTERS (Grup situs tepercaya untuk tiap kategori)
     CATEGORY_DOMAINS = {
-        SearchCategory.HADITH: ["sunnah.com", "dorar.net"],
-        SearchCategory.FIQH: ["islamqa.info", "islamweb.net", "alifta.gov.sa"],
-        SearchCategory.ZAIDI: ["salvationark.com", "zaydi.info", "ziydia.com"],
-        SearchCategory.PROGRESSIVE: ["mpvusa.org", "iijt.org", "islamandlibertynetwork.org"],
-        SearchCategory.TAFSIR: ["tafsir.app", "quran.com", "quran.ksu.edu.sa"],
-        SearchCategory.QURAN: ["quran.com", "quranwbw.com"],
-        SearchCategory.DUA: ["hisnmuslim.com", "duas.org"],
-        SearchCategory.AQIDAH: ["islamqa.info", "binbaz.org.sa", "alifta.gov.sa"]
+        SearchCategory.HADITH: [
+            "sunnah.com", "dorar.net", "islamweb.net", 
+            "hadithprophet.com", "hadits.id", "carihadis.com"
+        ],
+        SearchCategory.FIQH: [
+            "islamqa.info", "islamweb.net", "alifta.gov.sa", 
+            "binbaz.org.sa", "alukah.net"
+        ],
+        SearchCategory.ZAIDI: [
+            "salvationark.com", "zaydi.info", "ziydia.com"
+        ],
+        SearchCategory.PROGRESSIVE: [
+            "mpvusa.org", "iijt.org", "islamandlibertynetwork.org"
+        ],
+        SearchCategory.TAFSIR: [
+            "tafsir.app", "quran.com", "quran.ksu.edu.sa", "tafsir.net"
+        ],
+        SearchCategory.QURAN: [
+            "quran.com", "quranwbw.com"
+        ],
+        SearchCategory.DUA: [
+            "hisnmuslim.com", "duas.org", "kalemtayyeb.com"
+        ],
+        SearchCategory.AQIDAH: [
+            "islamqa.info", "binbaz.org.sa", "alifta.gov.sa"
+        ]
     }
 
     @staticmethod
@@ -533,7 +552,7 @@ class SmartSearch:
 
     @classmethod
     async def execute_search(cls, session: aiohttp.ClientSession, query: str) -> str:
-        """Executes live web search using async DDGS or DuckDuckGo HTTP fallback."""
+        """Executes live web search using async DDGS or DuckDuckGo HTTP fallback across multi-domain clusters."""
         query_clean = cls.clean_query(query)
         category = cls.classify_query(query_clean)
         cache_key = f"search:{category.name}:{query_clean}"
@@ -543,31 +562,18 @@ class SmartSearch:
             return cached
 
         results = []
+        domains = cls.CATEGORY_DOMAINS.get(category, [])
+        site_cluster = " OR ".join([f"site:{d}" for d in domains])
 
         # Attempt 1: duckduckgo_search library in async thread if available
         if HAS_DDGS:
             try:
                 def _ddg_sync():
                     res_list = []
-                    domains = cls.CATEGORY_DOMAINS.get(category, [])
-                    
-                    # Explicit Site-Locking per Category
-                    if category == SearchCategory.HADITH:
-                        search_term = f"site:sunnah.com OR site:dorar.net Hadith matan text {query_clean}".strip()
-                    elif category == SearchCategory.TAFSIR:
-                        search_term = f"site:tafsir.app OR site:quran.com Tafsir exegesis Ibn Kathir {query_clean}".strip()
-                    elif category == SearchCategory.FIQH:
-                        search_term = f"site:islamqa.info OR site:islamweb.net OR site:alifta.gov.sa Fiqh fatwa ruling dalil {query_clean}".strip()
-                    elif category == SearchCategory.ZAIDI:
-                        search_term = f"site:salvationark.com OR site:zaydi.info OR site:ziydia.com Fiqh Zaydi ruling {query_clean}".strip()
-                    elif category == SearchCategory.PROGRESSIVE:
-                        search_term = f"site:mpvusa.org OR site:iijt.org Progressive Muslim reformist ruling {query_clean}".strip()
-                    else:
-                        site_filter = " OR ".join([f"site:{d}" for d in domains])
-                        search_term = f"quran verse hadith authentic fiqh {query_clean} {site_filter}".strip()
+                    search_term = f"({site_cluster}) {query_clean}".strip() if site_cluster else query_clean
                     
                     with DDGS() as ddgs:
-                        res = ddgs.text(search_term, max_results=4)
+                        res = ddgs.text(search_term, max_results=5)
                         for r in res:
                             res_list.append(f"Source/Title: {r['title']}\nVerified Content: {r['body']}")
                     return res_list
@@ -579,22 +585,8 @@ class SmartSearch:
         # Attempt 2: Direct HTTP search fallback via aiohttp
         if not results:
             try:
-                if category == SearchCategory.HADITH:
-                    full_query = f"site:sunnah.com {query_clean}".strip()
-                elif category == SearchCategory.TAFSIR:
-                    full_query = f"site:tafsir.app OR site:quran.com {query_clean}".strip()
-                elif category == SearchCategory.FIQH:
-                    full_query = f"site:islamqa.info OR site:islamweb.net OR site:alifta.gov.sa {query_clean}".strip()
-                elif category == SearchCategory.ZAIDI:
-                    full_query = f"site:salvationark.com OR site:zaydi.info {query_clean}".strip()
-                elif category == SearchCategory.PROGRESSIVE:
-                    full_query = f"site:mpvusa.org OR site:iijt.org {query_clean}".strip()
-                else:
-                    domains = cls.CATEGORY_DOMAINS.get(category, [])
-                    site_filter = " OR ".join([f"site:{d}" for d in domains])
-                    full_query = f"{query_clean} {site_filter}".strip()
-                    
-                url = f"https://lite.duckduckgo.com/lite/"
+                full_query = f"({site_cluster}) {query_clean}".strip() if site_cluster else query_clean
+                url = "https://lite.duckduckgo.com/lite/"
                 headers = {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                 }
@@ -606,15 +598,25 @@ class SmartSearch:
                         snippets = re.findall(r'<td class="result-snippet">(.*?)</td>', html, re.DOTALL)
                         links = re.findall(r'<a class="result-title" href="(.*?)">(.*?)</a>', html, re.DOTALL)
 
-                        for i in range(min(len(snippets), 4)):
+                        for i in range(min(len(snippets), 5)):
                             title = re.sub(r'<[^>]+>', '', links[i][1]).strip() if i < len(links) else "Search Result"
                             snippet = re.sub(r'<[^>]+>', '', snippets[i]).strip()
                             results.append(f"Source/Title: {title}\nVerified Content: {snippet}")
             except Exception as e:
                 LOGGER.warning(f"HTTP Search Fallback Exception: {e}")
 
-        header_prefix = f"[VERIFIED {category.name} DATA INJECTED FROM ANCHORED REPOSITORIES]\n"
-        output = header_prefix + "\n\n".join(results) if results else "NO VERIFIED WEB REFERENCES FOUND. Provide answer using general Qur'an/Hadith principles with Arabic text and cite general Fiqh/Tafsir book sources."
+        # STRICT Anti-Fabrication Payload Response
+        header_prefix = f"[VERIFIED {category.name} DATA INJECTED FROM ANCHORED CLUSTER]\n"
+        if results:
+            output = header_prefix + "\n\n".join(results)
+        else:
+            output = (
+                f"[NO VERIFIED {category.name} REFERENCES FOUND IN CLUSTER]\n"
+                "CRITICAL MANDATE FOR GROQ:\n"
+                "Search references yielded no direct verified match. YOU ARE ABSOLUTELY FORBIDDEN from naming any Hadith book, Hadith numbers, or specific Sahabah narrators from memory.\n"
+                "State ONLY general meaning using neutral phrasing like: 'Diriwayatkan dalam riwayat Hadits bahwa...' or 'Dalam riwayat disebutkan...' WITHOUT assigning fake narrators, Sahabah, or book names."
+            )
+
         await GLOBAL_CACHE.set(cache_key, output, ttl=CONFIG.CACHE_TTL_SEARCH)
         return output
 #endregion
@@ -705,7 +707,7 @@ MANDATORY DALIL & CITATION RULES (STRICTLY ENFORCED FOR ALL COMMANDS & CHATS):
 1. MANDATORY EVIDENCE (DALIL) & SOURCE CITATION IN EVERY RESPONSE:
    - EVERY SINGLE RESPONSE MUST INCLUDE:
      a) Clear Evidence / Dalil (Original Arabic text/Matan for Hadiths when verified, + Translation derived strictly from official reference data).
-     b) Explicit Source Citation (e.g., "Surah Al-Baqarah: 183", "Sahih al-Bukhari No. 1", "Tafsir Ibn Kathir", "Kitab Al-Majmu' Sharh al-Muhadhdhab by Imam an-Nawawi", or "Kitab Fiqh al-Sunnah").
+     b) Explicit Source Citation (e.g., "Surah Al-Baqarah: 183", "Sahih al-Bukhari No. 1", "Sunan at-Tirmidzi No. 2699", "Tafsir Ibn Kathir", "Kitab Al-Majmu' Sharh al-Muhadhdhab by Imam an-Nawawi", or "Kitab Fiqh al-Sunnah").
    - NEVER provide a plain opinion without grounding it in Qur'an/Hadith Dalil and recognized scholarly/kitāb sources.
 
 2. STRICT TARGET LANGUAGE MANDATE (ZERO CONTEXT LEAKAGE & NO MIXING):
@@ -717,7 +719,7 @@ MANDATORY DALIL & CITATION RULES (STRICTLY ENFORCED FOR ALL COMMANDS & CHATS):
    - Whenever Quranic verses are cited, you MUST use the exact Arabic text provided in the prompt context from 'qpc-hafs.json'.
    - The translation MUST be derived directly from the injected reference JSON dataset, translated or adapted seamlessly to match the user's required target response language.
 
-4. ACADEMIC OBJECTIVITY & SCHOOLS OF THOUGHT NEUTRALITY:
+4. ACADEMIC OBJECTIVITY & BROAD SCHOOLS OF THOUGHT NEUTRALITY:
    - When queried about traditional Madhhabs, Zaydi Shīʿa jurisprudence, or Progressive/Reformist Muslim perspectives, prioritize authentic recognized sources for each respective school.
    - Maintain absolute academic objectivity and neutrality. Strictly avoid external polemical labels, sectarian insults, or ungrounded theological accusations. Present each school's positions strictly based on its recognized scholars and corpus.
 
@@ -733,10 +735,11 @@ MANDATORY DALIL & CITATION RULES (STRICTLY ENFORCED FOR ALL COMMANDS & CHATS):
    - IF NO OFFICIAL QURAN DATA IS INJECTED IN THE PROMPT BELOW: YOU ARE ABSOLUTELY FORBIDDEN FROM WRITING ANY ARABIC QURANIC TEXT FROM MEMORY.
    - Simply state the meaning and Surah reference in the target language (e.g., "Sebagaimana firman Allah dalam QS. An-Nisa: 86..."). DO NOT write the Arabic text for Quran verses unless provided in context!
 
-8. STRICT HADITH MATAN & TAKHRIJ NARRATOR GUARDRAIL (CRITICAL HADITH RULE):
+8. STRICT HADITH MATAN & BROAD KUTUBUS SITTAH TAKHRIJ GUARDRAIL (CRITICAL HADITH RULE):
+   - BROAD HADITH SCOPE: DO NOT limit Hadiths only to Bukhari or Muslim. Actively present authentic Hadiths from the full spectrum of Kutubus Sittah & major collections (Sunan Abi Dawud, Sunan at-Tirmidzi, Sunan an-Nasa'i, Sunan Ibn Majah, Muwatta' Malik, and Musnad Ahmad) whenever relevant.
    - CONTEXTUAL MATCHING MANDATE: The Hadith quoted MUST explicitly match the core context of the user's question.
-   - ABSOLUTE TAKHRIJ FABRICATION BAN: DO NOT assign Hadiths to 'Bukhari', 'Muslim', or 'Muttafaq 'Alayh' unless explicitly verified in the Sunnah.com injected search references below.
-   - UNVERIFIED NARRATOR GUARDRAIL: If the exact Hadith collector/narrator is NOT verified in the injected context, cite ONLY as "Diriwayatkan dalam riwayat Hadits bahwa..." or "In a Hadith report it is stated that...". DO NOT guess narrator names from memory!
+   - NO SEARCH DATA = NO NARRATOR NAMES: If no verified reference cluster is injected in the prompt context below, YOU ARE STRICTLY FORBIDDEN from mentioning 'Bukhari', 'Muslim', 'Tirmidzi', 'Abu Dawud', or specific Sahabah names from memory.
+   - UNVERIFIED NARRATOR GUARDRAIL: Cite ONLY as "Diriwayatkan dalam riwayat Hadits bahwa..." or "Dalam riwayat disebutkan...". NEVER guess Hadith collectors or companions from memory!
    - NATURAL MEANING TRANSLATION: If conveying general meaning, state it naturally in the target language without English meta-labels.
 
 9. MANDATORY DISCLAIMER:
@@ -861,7 +864,7 @@ async def on_message(message: discord.Message):
     if message.author.bot:
         return
 
-    # Check for direct Verse Shortcut (e.g., 2:255, 1:1-7, An-Nur 2, Sourate Al-Baqara 255)
+    # Check for direct Verse Shortcut (e.g., 2:255, 1:1-7, An-Nur 2, Sourate Al-Baqara 255) -> 100% JSON Pure Retrieval
     parsed_verse = QURAN_DB.parse_verse_key(message.content.strip())
     if parsed_verse and len(message.content.strip().split()) <= 5:
         surah_num, start_a, end_a = parsed_verse
@@ -1020,7 +1023,7 @@ async def process_slash_query(
             type_instruction = (
                 "\n\n[STRICT COMMAND MANDATE: HADITH SPECIFIC (/hadith)]\n"
                 "1. THIS IS EXCLUSIVELY A HADITH COMMAND.\n"
-                "2. The main response MUST focus 100% on Authentic Hadiths (Arabic Matan + Translation + Collection Narrator from Sunnah.com).\n"
+                "2. The main response MUST focus 100% on Authentic Hadiths across Kutubus Sittah & major collections (Arabic Matan + Translation + Collection Narrator from verified search cluster).\n"
                 "3. DO NOT output Quranic verses as the main headline or primary answer. Keep the response strictly centred around Hadiths!"
             )
         elif command_type == "tafsir":
@@ -1062,11 +1065,11 @@ async def slash_help(interaction: discord.Interaction, language: Optional[str] =
         "📖 **Islamic.AI — Command Guide & Help**\n\n"
         "**Main Commands (Strictly Grounded with Dalil & Sources):**\n"
         "• `/quran [surah] [verse] [verse_to] [language]` - Fetch exact Arabic & Reference Translation directly from JSON Database (0% Hallucination).\n"
-        "• `/ask [prompt] [language]` - Ask any question (Includes Arabic Dalil + Kitāb citations).\n"
-        "• `/tafsir [verse] [source] [language]` - Detailed Qur'anic exegesis powered by JSON Data + AI.\n"
-        "• `/fiqh [question] [madhhab] [language]` - Ask Fiqh rulings with Arabic Dalil & Fiqh book sources.\n"
-        "• `/hadith [topic] [book] [language]` - Search authentic Hadiths with Matan Arabic & collection citations.\n"
-        "• `/dua [topic] [language]` - Search authentic Duas with Arabic text & source references.\n"
+        "• `/ask [prompt] [language]` - Ask any question (Includes RAG Search + Arabic Dalil + Kitāb citations).\n"
+        "• `/tafsir [verse] [source] [language]` - Detailed Qur'anic exegesis powered by JSON Data + Tafsir Cluster Search + AI.\n"
+        "• `/fiqh [question] [madhhab] [language]` - Ask Fiqh rulings with Fatwa Cluster Search + Arabic Dalil & Fiqh book sources.\n"
+        "• `/hadith [topic] [book] [language]` - Search authentic Hadiths from Kutubus Sittah Cluster with Matan Arabic & collection citations.\n"
+        "• `/dua [topic] [language]` - Search authentic Duas with Adhkar Cluster Search + Arabic text & sources.\n"
         "• `/dalil [topic] [language]` - Find evidence from Qur'an & Sunnah (Arabic + Translation + Citations).\n"
         "• `/search [query] [language]` - Search live web references with cited sources.\n"
         "• `/language [language]` - Save your preferred default language for all responses.\n"
@@ -1081,7 +1084,7 @@ async def slash_help(interaction: discord.Interaction, language: Optional[str] =
         BOT.user_languages[interaction.user.id] = language
     await interaction.response.send_message(guide_text)
 
-@BOT.tree.command(name="quran", description="Get exact Qur'an Arabic text and reference translation directly from database")
+@BOT.tree.command(name="quran", description="Get exact Qur'an Arabic text and reference translation directly from database (Zero AI)")
 @app_commands.describe(
     surah="Surah number (1-114)",
     verse="Verse number",
@@ -1100,7 +1103,7 @@ async def slash_quran(
         BOT.user_languages[interaction.user.id] = language
     await send_quran_embed(interaction, surah, verse, verse_to)
 
-@BOT.tree.command(name="ask", description="Ask anything about Islam (Arabic Dalil & Book Citations Included)")
+@BOT.tree.command(name="ask", description="Ask anything about Islam (RAG Web Search + Arabic Dalil & Book Citations Included)")
 @app_commands.describe(
     prompt="Your question or topic",
     language="Optional: Type target response language (e.g., English, French, Arabic, Spanish)"
@@ -1113,7 +1116,7 @@ async def slash_ask(
     await interaction.response.defer()
     await process_slash_query(interaction, prompt, language, CONFIG.MODEL_HEAVY, command_type="ask")
 
-@BOT.tree.command(name="tafsir", description="Detailed Qur'anic exegesis (Injected with Official JSON Data & Tafsir Sources)")
+@BOT.tree.command(name="tafsir", description="Detailed Qur'anic exegesis (Injected with Official JSON Data + Tafsir Cluster Search)")
 @app_commands.describe(
     verse="Verse reference (e.g., '2:255', 'An-Nur 2', 'Sourate Al-Baqara 255')",
     source="Optional: Tafsir book (Ibn Kathir, Jalalayn, As-Sa'di, etc.)",
@@ -1135,7 +1138,7 @@ async def slash_tafsir(
     )
     await process_slash_query(interaction, query, language, CONFIG.MODEL_HEAVY, command_type="tafsir")
 
-@BOT.tree.command(name="fiqh", description="Ask Fiqh rulings with Arabic Dalil & Kitāb sources")
+@BOT.tree.command(name="fiqh", description="Ask Fiqh rulings with Fatwa Cluster Search + Arabic Dalil & Kitāb sources")
 @app_commands.describe(
     question="Your jurisprudence (Fiqh) question",
     madhhab="Select Madhhab or perspective",
@@ -1164,10 +1167,10 @@ async def slash_fiqh(
     query = f"Fiqh Question: '{question}'. Requested Madhhab/Perspective: {chosen_madhhab.upper()}."
     await process_slash_query(interaction, query, language, CONFIG.MODEL_HEAVY, command_type="fiqh")
 
-@BOT.tree.command(name="hadith", description="Search authentic Hadiths with Arabic Matan & Collection Citations from Sunnah.com")
+@BOT.tree.command(name="hadith", description="Search authentic Hadiths from Kutubus Sittah Cluster Search with Matan Arabic")
 @app_commands.describe(
     topic="Hadith topic or keyword",
-    book="Optional: Hadith Collection (Bukhari, Muslim, Abu Dawud, etc.)",
+    book="Optional: Specific Hadith Collection (Bukhari, Muslim, Abu Dawud, Tirmidzi, Nasa'i, Ibn Majah, Muwatta Malik, Musnad Ahmad)",
     language="Optional: Type target response language (e.g., English, French, Arabic, Spanish)"
 )
 async def slash_hadith(
@@ -1177,10 +1180,11 @@ async def slash_hadith(
     language: Optional[str] = None
 ):
     await interaction.response.defer()
-    query = f"Hadith matan and text regarding '{topic}' in {book if book else 'Sahih Bukhari Muslim Kutubus Sittah'} site:sunnah.com."
+    requested_book = book if book else "Bukhari Muslim Abu Dawud Tirmidzi Nasai Ibn Majah Muwatta Malik Musnad Ahmad"
+    query = f"Hadith matan and text regarding '{topic}' in {requested_book}."
     await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT, command_type="hadith")
 
-@BOT.tree.command(name="dua", description="Search authentic Duas and Adhkar with Arabic Text & Sources")
+@BOT.tree.command(name="dua", description="Search authentic Duas and Adhkar with Adhkar Cluster Search + Arabic Text & Sources")
 @app_commands.describe(
     topic="Topic or situation for the Dua",
     language="Optional: Type target response language (e.g., English, French, Arabic, Spanish)"
@@ -1194,7 +1198,7 @@ async def slash_dua(
     query = f"Provide authentic Duas for topic/situation: '{topic}'."
     await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT, command_type="dua")
 
-@BOT.tree.command(name="dalil", description="Find Qur'anic and Hadith evidence (Arabic + Translation + Sources)")
+@BOT.tree.command(name="dalil", description="Find Qur'anic and Hadith evidence (RAG Cluster Search + Arabic + Translation + Sources)")
 @app_commands.describe(
     topic="Topic or issue to search evidence for",
     language="Optional: Type target response language (e.g., English, French, Arabic, Spanish)"
@@ -1205,10 +1209,10 @@ async def slash_dalil(
     language: Optional[str] = None
 ):
     await interaction.response.defer()
-    query = f"Provide authentic Dalil (Qur'an verses and Sahih Hadiths from sunnah.com) for topic: '{topic}'."
+    query = f"Provide authentic Dalil (Qur'an verses and Sahih Hadiths) for topic: '{topic}'."
     await process_slash_query(interaction, query, language, CONFIG.MODEL_HEAVY, command_type="dalil")
 
-@BOT.tree.command(name="search", description="Search Islamic research references from the web with citations")
+@BOT.tree.command(name="search", description="Search Islamic research references from multi-domain clusters with citations")
 @app_commands.describe(
     query="Search keywords",
     language="Optional: Type target response language (e.g., English, French, Arabic, Spanish)"
@@ -1267,7 +1271,7 @@ async def slash_test(interaction: discord.Interaction, language: Optional[str] =
 @BOT.tree.command(name="ping", description="Check bot latency status")
 async def slash_ping(interaction: discord.Interaction):
     latency = round(BOT.latency * 1000)
-    await interaction.response.send_message(f"🏓 **Pong!** Islamic.AI latency: `{latency}ms` (Dual JSON Grounding Active)")
+    await interaction.response.send_message(f"🏓 **Pong!** Islamic.AI latency: `{latency}ms` (Dual JSON Grounding + Multi-Domain RAG Active)")
 #endregion
 
 #region Main
