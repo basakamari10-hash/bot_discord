@@ -487,6 +487,7 @@ class SearchCategory(Enum):
     DUA = auto()
     AQIDAH = auto()
     ZAIDI = auto()
+    PROGRESSIVE = auto()
     GENERAL = auto()
 
 class SmartSearch:
@@ -496,6 +497,7 @@ class SmartSearch:
         SearchCategory.HADITH: ["sunnah.com", "dorar.net"],
         SearchCategory.FIQH: ["islamqa.info", "islamweb.net", "alifta.gov.sa"],
         SearchCategory.ZAIDI: ["salvationark.com", "zaydi.info", "ziydia.com"],
+        SearchCategory.PROGRESSIVE: ["mpvusa.org", "iijt.org", "islamandlibertynetwork.org"],
         SearchCategory.TAFSIR: ["tafsir.app", "quran.com", "quran.ksu.edu.sa"],
         SearchCategory.QURAN: ["quran.com", "quranwbw.com"],
         SearchCategory.DUA: ["hisnmuslim.com", "duas.org"],
@@ -511,6 +513,8 @@ class SmartSearch:
     @classmethod
     def classify_query(cls, query: str) -> SearchCategory:
         q = query.lower()
+        if any(w in q for w in ["progressive", "reformist", "modernist", "progressive muslims"]):
+            return SearchCategory.PROGRESSIVE
         if any(w in q for w in ["zaidi", "zaydism", "zaydiyya", "zaidiyyah", "الزيدية"]):
             return SearchCategory.ZAIDI
         if any(w in q for w in ["hadith", "sunnah", "bukhari", "muslim", "matan", "حديث", "سنة"]):
@@ -547,11 +551,17 @@ class SmartSearch:
                     res_list = []
                     domains = cls.CATEGORY_DOMAINS.get(category, [])
                     
-                    # Strictly enforce grounded domains for Hadith & Tafsir
+                    # Explicit Site-Locking per Category
                     if category == SearchCategory.HADITH:
                         search_term = f"site:sunnah.com OR site:dorar.net Hadith matan text {query_clean}".strip()
                     elif category == SearchCategory.TAFSIR:
                         search_term = f"site:tafsir.app OR site:quran.com Tafsir exegesis Ibn Kathir {query_clean}".strip()
+                    elif category == SearchCategory.FIQH:
+                        search_term = f"site:islamqa.info OR site:islamweb.net OR site:alifta.gov.sa Fiqh fatwa ruling dalil {query_clean}".strip()
+                    elif category == SearchCategory.ZAIDI:
+                        search_term = f"site:salvationark.com OR site:zaydi.info OR site:ziydia.com Fiqh Zaydi ruling {query_clean}".strip()
+                    elif category == SearchCategory.PROGRESSIVE:
+                        search_term = f"site:mpvusa.org OR site:iijt.org Progressive Muslim reformist ruling {query_clean}".strip()
                     else:
                         site_filter = " OR ".join([f"site:{d}" for d in domains])
                         search_term = f"quran verse hadith authentic fiqh {query_clean} {site_filter}".strip()
@@ -573,6 +583,12 @@ class SmartSearch:
                     full_query = f"site:sunnah.com {query_clean}".strip()
                 elif category == SearchCategory.TAFSIR:
                     full_query = f"site:tafsir.app OR site:quran.com {query_clean}".strip()
+                elif category == SearchCategory.FIQH:
+                    full_query = f"site:islamqa.info OR site:islamweb.net OR site:alifta.gov.sa {query_clean}".strip()
+                elif category == SearchCategory.ZAIDI:
+                    full_query = f"site:salvationark.com OR site:zaydi.info {query_clean}".strip()
+                elif category == SearchCategory.PROGRESSIVE:
+                    full_query = f"site:mpvusa.org OR site:iijt.org {query_clean}".strip()
                 else:
                     domains = cls.CATEGORY_DOMAINS.get(category, [])
                     site_filter = " OR ".join([f"site:{d}" for d in domains])
@@ -597,7 +613,7 @@ class SmartSearch:
             except Exception as e:
                 LOGGER.warning(f"HTTP Search Fallback Exception: {e}")
 
-        header_prefix = f"[VERIFIED {category.name} DATA INJECTED FROM AUTHENTIC REPOSITORIES]\n"
+        header_prefix = f"[VERIFIED {category.name} DATA INJECTED FROM ANCHORED REPOSITORIES]\n"
         output = header_prefix + "\n\n".join(results) if results else "NO VERIFIED WEB REFERENCES FOUND. Provide answer using general Qur'an/Hadith principles with Arabic text and cite general Fiqh/Tafsir book sources."
         await GLOBAL_CACHE.set(cache_key, output, ttl=CONFIG.CACHE_TTL_SEARCH)
         return output
@@ -701,9 +717,9 @@ MANDATORY DALIL & CITATION RULES (STRICTLY ENFORCED FOR ALL COMMANDS & CHATS):
    - Whenever Quranic verses are cited, you MUST use the exact Arabic text provided in the prompt context from 'qpc-hafs.json'.
    - The translation MUST be derived directly from the injected reference JSON dataset, translated or adapted seamlessly to match the user's required target response language.
 
-4. ZAYDI & COMPARATIVE MADHHAB REPOSITORIES & NEUTRALITY:
-   - When queried about Zaydi Shīʿa jurisprudence (Fiqh) or history, prioritize authentic classical texts (such as Al-Majmu' al-Mu'tabar) and verified digital repositories such as salvationark.com, zaydi.info, and ziydia.com.
-   - Maintain absolute academic objectivity and neutrality. Strictly avoid external polemical labels, sectarian insults, or ungrounded theological accusations. Present the school's mainstream jurisprudential positions strictly based on its recognized corpus.
+4. ACADEMIC OBJECTIVITY & SCHOOLS OF THOUGHT NEUTRALITY:
+   - When queried about traditional Madhhabs, Zaydi Shīʿa jurisprudence, or Progressive/Reformist Muslim perspectives, prioritize authentic recognized sources for each respective school.
+   - Maintain absolute academic objectivity and neutrality. Strictly avoid external polemical labels, sectarian insults, or ungrounded theological accusations. Present each school's positions strictly based on its recognized scholars and corpus.
 
 5. ABSOLUTE ZERO FABRICATION (ANTI-HALLUCINATION):
    - ONLY cite specific Hadith numbers or Quran verse numbers if grounded in authentic verified context injected below.
@@ -893,7 +909,6 @@ async def on_message(message: discord.Message):
                 f"[MANDATORY REQUIREMENT: Your answer MUST contain: (1) Relevant Arabic Dalil text + translation grounded in the provided JSON, and (2) Explicit book/scholarly source citations.]{lang_instruction}"
             )
 
-            # Direct Chat Mentions / Replies use Heavy Model for deep reasoning
             jawaban = await BOT.groq_client.chat_completion(
                 prompt_text=prompt,
                 system_prompt=PromptBuilder.SYSTEM_PROMPT,
@@ -1016,7 +1031,7 @@ async def process_slash_query(
         elif command_type == "fiqh":
             type_instruction = (
                 "\n\n[STRICT COMMAND MANDATE: FIQH SPECIFIC (/fiqh)]\n"
-                "1. Focus strictly on Islamic jurisprudence rulings, Madhhab perspectives, and Fiqh book citations."
+                "1. Focus strictly on Islamic jurisprudence rulings, Madhhab perspectives, and Fiqh book citations from verified fatwa repositories."
             )
 
         final_prompt = (
@@ -1096,7 +1111,6 @@ async def slash_ask(
     language: Optional[str] = None
 ):
     await interaction.response.defer()
-    # Uses MODEL_HEAVY for deep reasoning on general Islamic questions
     await process_slash_query(interaction, prompt, language, CONFIG.MODEL_HEAVY, command_type="ask")
 
 @BOT.tree.command(name="tafsir", description="Detailed Qur'anic exegesis (Injected with Official JSON Data & Tafsir Sources)")
@@ -1119,13 +1133,12 @@ async def slash_tafsir(
         f"Structure the response clearly: (1) Injected Arabic verse & translation, (2) Asbabun Nuzul (if authentic), "
         f"(3) Concise interpretation according to {primary_source}, and (4) Key spiritual/practical lessons."
     )
-    # Uses MODEL_HEAVY for deep Qur'anic exegesis
     await process_slash_query(interaction, query, language, CONFIG.MODEL_HEAVY, command_type="tafsir")
 
 @BOT.tree.command(name="fiqh", description="Ask Fiqh rulings with Arabic Dalil & Kitāb sources")
 @app_commands.describe(
     question="Your jurisprudence (Fiqh) question",
-    madhhab="Select Madhhab perspective",
+    madhhab="Select Madhhab or perspective",
     language="Optional: Type target response language (e.g., English, French, Arabic, Spanish)"
 )
 @app_commands.choices(
@@ -1136,6 +1149,7 @@ async def slash_tafsir(
         app_commands.Choice(name="Hanbali", value="hanbali"),
         app_commands.Choice(name="Ja'fari / Shia Twelver", value="jaafari_shia"),
         app_commands.Choice(name="Zaidi / Shia Zaidiyyah", value="zaidi_shia"),
+        app_commands.Choice(name="Progressive / Reformist Muslim Thought", value="progressive_muslims"),
         app_commands.Choice(name="Comparative (All Schools of Thought)", value="comparative_all")
     ]
 )
@@ -1147,8 +1161,7 @@ async def slash_fiqh(
 ):
     await interaction.response.defer()
     chosen_madhhab = madhhab.value if madhhab else "comparative_all"
-    query = f"Fiqh Question: '{question}'. Requested Madhhab: {chosen_madhhab.upper()}."
-    # Uses MODEL_HEAVY for complex comparative jurisprudence
+    query = f"Fiqh Question: '{question}'. Requested Madhhab/Perspective: {chosen_madhhab.upper()}."
     await process_slash_query(interaction, query, language, CONFIG.MODEL_HEAVY, command_type="fiqh")
 
 @BOT.tree.command(name="hadith", description="Search authentic Hadiths with Arabic Matan & Collection Citations from Sunnah.com")
@@ -1165,7 +1178,6 @@ async def slash_hadith(
 ):
     await interaction.response.defer()
     query = f"Hadith matan and text regarding '{topic}' in {book if book else 'Sahih Bukhari Muslim Kutubus Sittah'} site:sunnah.com."
-    # Uses MODEL_LIGHT for fast text retrieval and translation from Sunnah.com
     await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT, command_type="hadith")
 
 @BOT.tree.command(name="dua", description="Search authentic Duas and Adhkar with Arabic Text & Sources")
@@ -1194,7 +1206,6 @@ async def slash_dalil(
 ):
     await interaction.response.defer()
     query = f"Provide authentic Dalil (Qur'an verses and Sahih Hadiths from sunnah.com) for topic: '{topic}'."
-    # Uses MODEL_HEAVY for comprehensive cross-referencing of evidence
     await process_slash_query(interaction, query, language, CONFIG.MODEL_HEAVY, command_type="dalil")
 
 @BOT.tree.command(name="search", description="Search Islamic research references from the web with citations")
