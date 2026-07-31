@@ -1,5 +1,6 @@
 # ==============================================================================
 # bot_quran.py - Production-Ready Islamic & Quran Discord AI Bot
+# Multilingual Surah Parsing & Dual JSON Grounding (Zero Hallucination RAG)
 # ==============================================================================
 
 #region Imports
@@ -157,11 +158,157 @@ GLOBAL_RATE_LIMITER = RateLimiter(
 )
 #endregion
 
+#region Multilingual Surah Data & Mapping
+SURAH_MAP: Dict[str, int] = {
+    # 1-10
+    "fatihah": 1, "fatiha": 1, "الفاتحة": 1,
+    "baqarah": 2, "baqara": 2, "bakara": 2, "البقرة": 2,
+    "imran": 3, "ali-imran": 3, "آل عمران": 3,
+    "nisa": 4, "nisaa": 4, "النساء": 4,
+    "maidah": 5, "maida": 5, "المائدة": 5,
+    "anam": 6, "an'am": 6, "الأنعام": 6,
+    "araf": 7, "a'raf": 7, "الأعراف": 7,
+    "anfal": 8, "الأنفال": 8,
+    "taubah": 9, "tawbah": 9, "tevbe": 9, "التوبة": 9,
+    "yunus": 10, "yunas": 10, "يونس": 10,
+    # 11-20
+    "hud": 11, "هود": 11,
+    "yusuf": 12, "joseph": 12, "يوسف": 12,
+    "rad": 13, "ra'd": 13, "الرعد": 13,
+    "ibrahim": 14, "abraham": 14, "إبراهيم": 14,
+    "hijr": 15, "الحجر": 15,
+    "nahl": 16, "النحل": 16,
+    "isra": 17, "الإسراء": 17,
+    "kahf": 18, "kahfi": 18, "Kehf": 18, "الكهف": 18,
+    "maryam": 19, "mary": 19, "مريم": 19,
+    "taha": 20, "ta-ha": 20, "طه": 20,
+    # 21-30
+    "anbiya": 21, "anbiya'": 21, "الأنبياء": 21,
+    "hajj": 22, "hac": 22, "الحج": 22,
+    "muminun": 23, "mu'minun": 23, "المؤمنون": 23,
+    "nur": 24, "noor": 24, "النور": 24,
+    "furqan": 25, "الفرقان": 25,
+    "shuara": 26, "shu'ara": 26, "الشعراء": 26,
+    "naml": 27, "النمل": 27,
+    "qasas": 28, "القصص": 28,
+    "ankabut": 29, "'ankabut": 29, "العنكبوت": 29,
+    "rum": 30, "الروم": 30,
+    # 31-40
+    "luqman": 31, "lokman": 31, "لقمان": 31,
+    "sajdah": 32, "secde": 32, "السجدة": 32,
+    "ahzab": 33, "الأحزاب": 33,
+    "saba": 34, "saba'": 34, "سبأ": 34,
+    "fatir": 35, "فاطر": 35,
+    "yasin": 36, "ya-sin": 36, "yaseen": 36, "يس": 36,
+    "saffat": 37, "الصافات": 37,
+    "sad": 38, "ص": 38,
+    "zumar": 39, "الزمر": 39,
+    "ghafir": 40, "mumin": 40, "غافر": 40,
+    # 41-50
+    "fussilat": 41, "فصلت": 41,
+    "shura": 42, "shuraa": 42, "الشورى": 42,
+    "zukhruf": 43, "الزخرف": 43,
+    "dukhan": 44, "الدخان": 44,
+    "jathiyah": 45, "جاثية": 45, "الجاثية": 45,
+    "ahqaf": 46, "الأحقاف": 46,
+    "muhammad": 47, "محمد": 47,
+    "fath": 48, "fetih": 48, "الفتح": 48,
+    "hujurat": 49, "الحجرات": 49,
+    "qaf": 50, "ق": 50,
+    # 51-60
+    "dhariyat": 51, "zariyat": 51, "الذاريات": 51,
+    "tur": 52, "الطور": 52,
+    "najm": 53, "necm": 53, "النجم": 53,
+    "qamar": 54, "القمر": 54,
+    "rahman": 55, "الرحمن": 55,
+    "waqiah": 56, "waqi'ah": 56, "vakaa": 56, "الواقعة": 56,
+    "hadid": 57, "الحديد": 57,
+    "mujadila": 58, "mujadilah": 58, "المجادلة": 58,
+    "hashr": 59, "الحشر": 59,
+    "mumtahanah": 60, "الممتحنة": 60,
+    # 61-70
+    "saff": 61, "الصف": 61,
+    "jumuah": 62, "jumu'ah": 62, "cuma": 62, "الجمعة": 62,
+    "munafiqun": 63, "المنافقون": 63,
+    "taghabun": 64, "التغابن": 64,
+    "talaq": 65, "التلاق": 65,
+    "tahrim": 66, "التحريم": 66,
+    "mulk": 67, "tebareke": 67, "الملك": 67,
+    "qalam": 68, "kalem": 68, "القلم": 68,
+    "haqqah": 69, "الحاقة": 69,
+    "maarij": 70, "ma'arij": 70, "المعارج": 70,
+    # 71-80
+    "nuh": 71, "noah": 71, "نوح": 71,
+    "jinn": 72, "cin": 72, "الجن": 72,
+    "muzzammil": 73, "المزمل": 73,
+    "muddaththir": 74, "المدثر": 74,
+    "qiyamah": 75, "قيامة": 75, "القيامة": 75,
+    "insan": 76, "dahr": 76, "الإنسان": 76,
+    "mursalat": 77, "المرسلات": 77,
+    "naba": 78, "nebe": 78, "النبأ": 78,
+    "naziat": 79, "nazi'at": 79, "النازعات": 79,
+    "abasa": 80, "عبس": 80,
+    # 81-90
+    "takwir": 81, "التكوير": 81,
+    "infitar": 82, "الانفطار": 82,
+    "mutaffifin": 83, "المطففين": 83,
+    "inshiqaq": 84, "الانشقاق": 84,
+    "buruj": 85, "البروج": 85,
+    "tariq": 86, "الطارق": 86,
+    "ala": 87, "a'la": 87, "الأعلى": 87,
+    "ghashiyah": 88, "الغاشية": 88,
+    "fajr": 89, "fejr": 89, "الفجر": 89,
+    "balad": 90, "البلد": 90,
+    # 91-100
+    "shams": 91, "شمس": 91, "الشمس": 91,
+    "layl": 92, "leyl": 92, "الليل": 92,
+    "duha": 93, "dhuha": 93, "الضحى": 93,
+    "sharh": 94, "inshirah": 94, "الشرح": 94,
+    "tin": 95, "التين": 95,
+    "alaq": 96, "'alaq": 96, "العلق": 96,
+    "qadr": 97, "kadir": 97, "القدر": 97,
+    "bayyinah": 98, "البيّنة": 98, "البينة": 98,
+    "zalzalah": 99, "zilzal": 99, "الزلزلة": 99,
+    "adiyat": 100, "'adiyat": 100, "العاديات": 100,
+    # 101-114
+    "qariah": 101, "qari'ah": 101, "القارعة": 101,
+    "takathur": 102, "التكاثر": 102,
+    "asr": 103, "'asr": 103, "العصر": 103,
+    "humazah": 104, "الهمزة": 104,
+    "fil": 105, "feel": 105, "الفيل": 105,
+    "quraysh": 106, "quraish": 106, "قريش": 106,
+    "maun": 107, "ma'un": 107, "الماعون": 107,
+    "kawthar": 108, "kautsar": 108, "kevser": 108, "الكوثر": 108,
+    "kafirun": 109, "kafiroon": 109, "الكافرون": 109,
+    "nasr": 110, "النصر": 110,
+    "masad": 111, "lahab": 111, "المسد": 111,
+    "ikhlas": 112, "ihlas": 112, "الإخلاص": 112,
+    "falaq": 113, "felak": 113, "الفلق": 113,
+    "nas": 114, "naas": 114, "الناس": 114
+}
+
+SURAH_OFFICIAL_NAMES = [
+    "", "Al-Fatihah", "Al-Baqarah", "Ali 'Imran", "An-Nisa'", "Al-Ma'idah", "Al-An'am", "Al-A'raf", "Al-Anfal", "At-Tawbah",
+    "Yunus", "Hud", "Yusuf", "Ar-Ra'd", "Ibrahim", "Al-Hijr", "An-Nahl", "Al-Isra'", "Al-Kahf", "Maryam",
+    "Ta-Ha", "Al-Anbiya'", "Al-Hajj", "Al-Mu'minun", "An-Nur", "Al-Furqan", "Ash-Shu'ara'", "An-Naml", "Al-Qasas", "Al-'Ankabut",
+    "Ar-Rum", "Luqman", "As-Sajdah", "Al-Ahzab", "Saba'", "Fatir", "Ya-Sin", "As-Saffat", "Sad", "Az-Zumar",
+    "Ghafir", "Fussilat", "Ash-Shura", "Az-Zukhruf", "Ad-Dukhan", "Al-Jathiyah", "Al-Ahqaf", "Muhammad", "Al-Fath", "Al-Hujurat",
+    "Qaf", "Adh-Dhariyat", "At-Tur", "An-Najm", "Al-Qamar", "Ar-Rahman", "Al-Waqi'ah", "Al-Hadid", "Al-Mujadila", "Al-Hashr",
+    "Al-Mumtahanah", "As-Saff", "Al-Jumu'ah", "Al-Munafiqun", "At-Taghabun", "At-Talaq", "At-Tahrim", "Al-Mulk", "Al-Qalam", "Al-Haqqah",
+    "Al-Ma'arij", "Nuh", "Al-Jinn", "Al-Muzzammil", "Al-Muddaththir", "Al-Qiyamah", "Al-Insan", "Al-Mursalat", "An-Naba'", "An-Nazi'at",
+    "'Abasa", "At-Takwir", "Al-Infitar", "Al-Mutaffifin", "Al-Inshiqaq", "Al-Buruj", "At-Tariq", "Al-A'la", "Al-Ghashiyah", "Al-Fajr",
+    "Al-Balad", "Ash-Shams", "Al-Layl", "Ad-Duha", "Ash-Sharh", "At-Tin", "Al-'Alaq", "Al-Qadr", "Al-Bayyinah", "Az-Zalzalah",
+    "Al-'Adiyat", "Al-Qari'ah", "At-Takathur", "Al-'Asr", "Al-Humazah", "Al-Fil", "Quraysh", "Al-Ma'un", "Al-Kawthar", "Al-Kafirun",
+    "An-Nasr", "Al-Masad", "Al-Ikhlas", "Al-Falaq", "An-Nas"
+]
+#endregion
+
 #region Quran Database
 class QuranDatabase:
     """
     Quran DB Engine supporting dual JSON files (qpc-hafs.json & english-wbw-translation.json).
     Supports format keys ("1:1"), "t" fields, array items, dict objects, and Word-By-Word structures.
+    Includes smart auto-mapping for Surah names across multiple languages (e.g. 'Sourate Al-Baqara 255' -> 2:255).
     """
     def __init__(self, arabic_path: str = CONFIG.HAFS_JSON_PATH, translation_path: str = CONFIG.ENGLISH_WBW_PATH):
         self.arabic_path = arabic_path
@@ -262,8 +409,9 @@ class QuranDatabase:
         tr_text = self.translation_data.get(s_key, {}).get(a_key, "")
 
         if ar_text or tr_text:
+            s_official = SURAH_OFFICIAL_NAMES[surah_num] if 1 <= surah_num <= 114 else f"Surah {surah_num}"
             return {
-                "surah_name": f"Surah {surah_num}",
+                "surah_name": s_official,
                 "surah_num": surah_num,
                 "ayah_num": ayah_num,
                 "ar": ar_text,
@@ -282,14 +430,48 @@ class QuranDatabase:
 
     @staticmethod
     def parse_verse_key(text: str) -> Optional[Tuple[int, int, Optional[int]]]:
-        """Parses patterns like '2:255' or '1:1-7'."""
-        match = re.search(r'\b(\d{1,3}):(\d{1,3})(?:-(\d{1,3}))?\b', text)
-        if match:
-            surah = int(match.group(1))
-            start_a = int(match.group(2))
-            end_a = int(match.group(3)) if match.group(3) else None
+        """
+        Parses patterns in any language like '24:2', 'An-Nur: 2', 'Sourate Al-Baqara 255', 
+        'Bakara Suresi 255', 'سورة البقرة 255'.
+        Converts Surah name aliases into surah numbers dynamically.
+        """
+        if not text:
+            return None
+
+        # 1. Standard numeric format "24:2" or "24:2-5"
+        match_num = re.search(r'\b(\d{1,3}):(\d{1,3})(?:-(\d{1,3}))?\b', text)
+        if match_num:
+            surah = int(match_num.group(1))
+            start_a = int(match_num.group(2))
+            end_a = int(match_num.group(3)) if match_num.group(3) else None
             if 1 <= surah <= 114:
                 return surah, start_a, end_a
+
+        # 2. Multilingual Named Surah format
+        clean_text = text.lower()
+        # Remove keywords across languages (English, French, Turkish, Indonesian, Arabic)
+        clean_text = re.sub(
+            r'\b(surah|sourate|sura|suresi|chapter|qs|qur\'an|quran|ayat|verse|سورة|سوره)\b', 
+            '', 
+            clean_text
+        )
+        
+        # Capture pattern: [Surah Name] [Ayah Number]
+        match_name = re.search(r'([a-z\'\-\u0600-\u06FF\s]+)\s*[:\s]\s*(\d{1,3})(?:\s*-\s*(\d{1,3}))?', clean_text)
+        if match_name:
+            raw_s_name = match_name.group(1).strip()
+            start_a = int(match_name.group(2))
+            end_a = int(match_name.group(3)) if match_name.group(3) else None
+            
+            # Auto-strip common article prefixes (al-, an-, ash-, at-, az-, ar-, ad-, el-)
+            normalized_name = re.sub(r'^(al|an|ash|at|az|ar|ad|el|el-)\-?', '', raw_s_name).strip()
+            
+            # Check SURAH_MAP with raw name or normalized name
+            if raw_s_name in SURAH_MAP:
+                return SURAH_MAP[raw_s_name], start_a, end_a
+            elif normalized_name in SURAH_MAP:
+                return SURAH_MAP[normalized_name], start_a, end_a
+
         return None
 
 QURAN_DB = QuranDatabase()
@@ -549,7 +731,7 @@ MANDATORY DALIL & CITATION RULES (STRICTLY ENFORCED FOR ALL COMMANDS & CHATS):
 
     @staticmethod
     def extract_quran_context(text: str) -> str:
-        """Inspects text for verse keys (e.g. 2:255) and fetches exact JSON content."""
+        """Inspects text for verse keys/names (e.g. 2:255, An-Nur 2, Sourate Al-Baqara 255) and fetches exact JSON content."""
         parsed = QURAN_DB.parse_verse_key(text)
         if not parsed:
             return ""
@@ -561,7 +743,8 @@ MANDATORY DALIL & CITATION RULES (STRICTLY ENFORCED FOR ALL COMMANDS & CHATS):
         if not verses:
             return ""
 
-        header = f"--- QS. Surah {surah_num}:{start_ayah}" + (f"-{end_v} ---" if start_ayah != end_v else " ---")
+        s_official = SURAH_OFFICIAL_NAMES[surah_num] if 1 <= surah_num <= 114 else f"Surah {surah_num}"
+        header = f"--- QS. {s_official} (Surah {surah_num}):{start_ayah}" + (f"-{end_v} ---" if start_ayah != end_v else " ---")
         details = []
         for v in verses:
             details.append(
@@ -645,9 +828,9 @@ async def on_message(message: discord.Message):
     if message.author.bot:
         return
 
-    # Check for direct Verse Shortcut (e.g., 2:255 or 1:1-7)
+    # Check for direct Verse Shortcut (e.g., 2:255, 1:1-7, An-Nur 2, Sourate Al-Baqara 255)
     parsed_verse = QURAN_DB.parse_verse_key(message.content.strip())
-    if parsed_verse and len(message.content.strip().split()) == 1:
+    if parsed_verse and len(message.content.strip().split()) <= 5:
         surah_num, start_a, end_a = parsed_verse
         await send_quran_embed(message.channel, surah_num, start_a, end_a, reply_msg=message)
         return
@@ -752,7 +935,7 @@ async def send_quran_embed(destination: Any, surah_num: int, start_ayah: int, en
         return
 
     surah_name = verses[0]["surah_name"]
-    title_ref = f"📖 QS. {surah_name} [{surah_num}:{start_ayah}" + (f"-{end_v}]" if start_ayah != end_v else "]")
+    title_ref = f"📖 QS. {surah_name} ({surah_num}:{start_ayah}" + (f"-{end_v})" if start_ayah != end_v else ")")
     
     embed = discord.Embed(title=title_ref, color=discord.Color.gold())
     
@@ -835,7 +1018,7 @@ async def slash_help(interaction: discord.Interaction, language: Optional[str] =
         "• `/language [language]` - Save your preferred default language for all responses.\n"
         "• `/test [language]` - Check Groq API connection, latency, & system health.\n"
         "• `/ping` - Check bot status and Discord latency.\n\n"
-        "💡 *Verse Shortcut Tip:* Type verse numbers like `1:1-7` or `2:255` directly in chat to view Arabic text & translation instantly!\n"
+        "💡 *Verse Shortcut Tip:* Type verse numbers like `1:1-7`, `2:255`, `An-Nur 2`, or `Sourate Al-Baqara 255` directly in chat to view Arabic text & translation instantly!\n"
         "💡 *Language Tip:* Every command features a `language` option! The bot also automatically detects your question's language.\n\n"
         "--------------------------------------------------\n"
         "📌 **NB:** If you encounter AI hallucinations or problems with the AI bot, please contact **@hanabihikari** via DM with a screenshot."
@@ -878,7 +1061,7 @@ async def slash_ask(
 
 @BOT.tree.command(name="tafsir", description="Detailed Qur'anic exegesis (Injected with Official JSON Data)")
 @app_commands.describe(
-    verse="Verse reference (e.g., '2:255')",
+    verse="Verse reference (e.g., '2:255', 'An-Nur 2', 'Sourate Al-Baqara 255')",
     source="Optional: Tafsir book (Ibn Kathir, Jalalayn, etc.)",
     language="Optional: Type target response language (e.g., English, French, Arabic, Spanish)"
 )
