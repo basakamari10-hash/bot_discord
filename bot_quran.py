@@ -1,5 +1,5 @@
 # ==============================================================================
-# bot_quran.py - Production-Ready Islamic & Quran Discord AI Bot (PART 1)
+# bot_quran.py - Production-Ready Islamic & Quran Discord AI Bot
 # ==============================================================================
 
 #region Imports
@@ -20,7 +20,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
-# Streamlit compatibility import
+# Safe import for Streamlit Secrets compatibility
 try:
     import streamlit as st
     HAS_STREAMLIT = True
@@ -58,7 +58,7 @@ class Config:
     # 3-Model Routing Strategy (Groq)
     MODEL_HEAVY: str = "openai/gpt-oss-120b"          # Heavy Model (Tafsir & Fiqh)
     MODEL_LIGHT: str = "llama-3.3-70b-versatile"     # High-Intelligence Model
-    MODEL_FALLBACK: str = "llama-3.1-8b-instant"     # Fallback
+    MODEL_FALLBACK: str = "llama-3.1-8b-instant"     # Emergency Fallback
     
     # Model Fallback Priority List
     GROQ_MODELS: List[str] = field(default_factory=lambda: [
@@ -161,7 +161,7 @@ GLOBAL_RATE_LIMITER = RateLimiter(
 class QuranDatabase:
     """
     Quran DB Engine supporting dual JSON files (qpc-hafs.json & english-wbw-translation.json).
-    Supports format keys ("1:1"), array items, dict objects, and Word-By-Word (WBW) structures.
+    Supports format keys ("1:1"), "t" fields, array items, dict objects, and Word-By-Word structures.
     """
     def __init__(self, arabic_path: str = CONFIG.HAFS_JSON_PATH, translation_path: str = CONFIG.ENGLISH_WBW_PATH):
         self.arabic_path = arabic_path
@@ -293,9 +293,7 @@ class QuranDatabase:
         return None
 
 QURAN_DB = QuranDatabase()
-#endregion# ==============================================================================
-# bot_quran.py - Production-Ready Islamic & Quran Discord AI Bot (PART 2)
-# ==============================================================================
+#endregion
 
 #region Search
 class SearchCategory(Enum):
@@ -481,9 +479,7 @@ class GroqClient:
                     await asyncio.sleep((2 ** attempt) + 0.5)
 
         return "⚠️ Sorry, all Groq AI servers are currently busy. Please try again in a few moments."
-#endregion# ==============================================================================
-# bot_quran.py - Production-Ready Islamic & Quran Discord AI Bot (PART 3)
-# ==============================================================================
+#endregion
 
 #region Prompt Builder
 class PromptBuilder:
@@ -513,8 +509,8 @@ MANDATORY DALIL & CITATION RULES (STRICTLY ENFORCED FOR ALL COMMANDS & CHATS):
    - Maintain absolute academic objectivity and neutrality. Strictly avoid external polemical labels, sectarian insults, or ungrounded theological accusations. Present the school's mainstream jurisprudential positions strictly based on its recognized corpus.
 
 5. ABSOLUTE ZERO FABRICATION (ANTI-HALLUCINATION):
-   - ONLY cite specific Hadith numbers or verse numbers if grounded in authentic verified references.
-   - FOR MODERN/CONTEMPORARY ISSUES: Do not invent fake literal Hadith narrations; cite general Qur'anic principles, Kaidah Fiqhiyyah, and Muamalah sources.
+   - ONLY cite specific Hadith numbers or Quran verse numbers if grounded in authentic verified context injected below.
+   - UNVERIFIED VERSE GUARDRAIL: If you reference a Quranic verse from memory that is NOT provided in the injected JSON context below, DO NOT guess or invent verse numbers (e.g., do NOT guess '24:51'). Cite ONLY the Surah name (e.g., "Surah An-Nisa'") or general "Al-Qur'an" unless the exact verse number is verified by search context.
 
 6. BIBLIOGRAPHIC ACCURACY & ANTI-FABRICATION RULE:
    - NEVER fabricate book volume numbers, page numbers, or specific edition details. 
@@ -535,20 +531,20 @@ MANDATORY DALIL & CITATION RULES (STRICTLY ENFORCED FOR ALL COMMANDS & CHATS):
 
     @staticmethod
     def create_language_instruction(language_param: Optional[str]) -> str:
-        """Enforces language translation mandates."""
+        """Enforces language translation mandates and forbids meta outputs."""
         if language_param and language_param.strip():
             return (
                 f"\n\n[STRICT TARGET LANGUAGE OVERRIDE - CRITICAL]\n"
                 f"1. Target Language: FORCED to '{language_param.strip()}'.\n"
                 f"2. Write EVERY SINGLE WORD of your response in '{language_param.strip()}'.\n"
-                f"3. You MUST translate all Hadith translations/meanings, Quran translations, labels, and disclaimers into '{language_param.strip()}'."
+                f"3. DO NOT output meta-text or intro notes like 'Language detected' or 'Bahasa telah terdeteksi'. Start directly with the answer!"
             )
         else:
             return (
                 "\n\n[STRICT AUTOMATIC LANGUAGE MATCHING - CRITICAL]\n"
                 "1. Automatically detect the exact language used in the user's prompt/question above.\n"
                 "2. Write EVERY SINGLE WORD of your response in that SAME detected language (e.g., English, French, Spanish, German, Arabic, etc.).\n"
-                "3. MANDATORY TRANSLATION: Translate ALL Hadith text/meanings, Quran translations, labels, explanations, and disclaimers into the user's detected language."
+                "3. CRITICAL: DO NOT write any introductory message about language detection (e.g., DO NOT write 'Bahasa Indonesia telah terdeteksi'). Start your response directly!"
             )
 
     @staticmethod
@@ -611,7 +607,7 @@ class IslamicBot(commands.Bot):
         except Exception as e:
             LOGGER.error(f"Failed to sync slash commands: {e}")
 
-        # Start background ping task
+        # Start background ping task (Runs every 3 hours)
         if not self.keep_alive_ping.is_running():
             self.keep_alive_ping.start()
 
@@ -621,7 +617,7 @@ class IslamicBot(commands.Bot):
             await self.session.close()
         await super().close()
 
-    @tasks.loop(hours=2)
+    @tasks.loop(hours=3)
     async def keep_alive_ping(self):
         """Background loop for Streamlit keep-alive ping."""
         if CONFIG.STREAMLIT_URL and "streamlit.app" in CONFIG.STREAMLIT_URL and self.session:
@@ -817,9 +813,7 @@ async def process_slash_query(
     except Exception as e:
         LOGGER.error(f"Error processing query '{prompt}': {e}")
         await interaction.followup.send(f"⚠️ An error occurred while processing your request: {e}")
-#endregion# ==============================================================================
-# bot_quran.py - Production-Ready Islamic & Quran Discord AI Bot (PART 4)
-# ==============================================================================
+#endregion
 
 #region Commands
 @BOT.tree.command(name="help", description="Guide & command list for Islamic.AI Bot")
@@ -842,7 +836,7 @@ async def slash_help(interaction: discord.Interaction, language: Optional[str] =
         "• `/test [language]` - Check Groq API connection, latency, & system health.\n"
         "• `/ping` - Check bot status and Discord latency.\n\n"
         "💡 *Verse Shortcut Tip:* Type verse numbers like `1:1-7` or `2:255` directly in chat to view Arabic text & translation instantly!\n"
-        "💡 *Language Tip:* Every command now features a `language` option! The bot also automatically detects your question's language.\n\n"
+        "💡 *Language Tip:* Every command features a `language` option! The bot also automatically detects your question's language.\n\n"
         "--------------------------------------------------\n"
         "📌 **NB:** If you encounter AI hallucinations or problems with the AI bot, please contact **@hanabihikari** via DM with a screenshot."
     )
