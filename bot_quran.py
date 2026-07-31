@@ -1,5 +1,5 @@
 # ==============================================================================
-# bot_quran.py - Production-Ready Islamic & Quran Discord AI Bot (BAGIAN 1)
+# bot_quran.py - Production-Ready Islamic & Quran Discord AI Bot (PART 1)
 # ==============================================================================
 
 #region Imports
@@ -52,13 +52,13 @@ class Config:
     """Central configuration management."""
     DISCORD_TOKEN: str = field(default_factory=lambda: _get_secret("DISCORD_TOKEN"))
     GROQ_API_KEY: str = field(default_factory=lambda: _get_secret("GROQ_API_KEY"))
-    STREAMLIT_URL: str = field(default_factory=lambda: _get_secret("STREAMLIT_URL", "https://nama-app-kamu.streamlit.app"))
+    STREAMLIT_URL: str = field(default_factory=lambda: _get_secret("STREAMLIT_URL", "https://your-app-name.streamlit.app"))
     PORT: int = field(default_factory=lambda: int(os.getenv("PORT", "8080")))
     
     # 3-Model Routing Strategy (Groq)
-    MODEL_BERAT: str = "openai/gpt-oss-120b"          # Heavy Model (Tafsir & Fiqh)
-    MODEL_RINGAN: str = "llama-3.3-70b-versatile"    # High-Intelligence Model
-    MODEL_CADANGAN: str = "llama-3.1-8b-instant"     # Fallback
+    MODEL_HEAVY: str = "openai/gpt-oss-120b"          # Heavy Model (Tafsir & Fiqh)
+    MODEL_LIGHT: str = "llama-3.3-70b-versatile"     # High-Intelligence Model
+    MODEL_FALLBACK: str = "llama-3.1-8b-instant"     # Fallback
     
     # Model Fallback Priority List
     GROQ_MODELS: List[str] = field(default_factory=lambda: [
@@ -223,8 +223,8 @@ class QuranDatabase:
                             text_val = " ".join([str(w.get("text", w) if isinstance(w, dict) else w) for w in t])
                         else:
                             text_val = str(t)
-                    elif "translation" in val or "text_english" in val:
-                        text_val = str(val.get("translation") or val.get("text_english"))
+                    elif "translation" in val or "text_english" in val or "t" in val:
+                        text_val = str(val.get("translation") or val.get("text_english") or val.get("t"))
                     elif "words" in val:
                         words = val["words"]
                         if isinstance(words, list):
@@ -244,7 +244,7 @@ class QuranDatabase:
                 if isinstance(item, dict):
                     surah = str(item.get("surah") or item.get("surah_number") or item.get("chapter") or "")
                     ayah = str(item.get("ayah") or item.get("verse") or item.get("verse_number") or "")
-                    text_val = item.get("text") or item.get("text_uthmani") or item.get("translation") or item.get("text_english") or ""
+                    text_val = item.get("text") or item.get("text_uthmani") or item.get("translation") or item.get("text_english") or item.get("t") or ""
                     
                     if surah and ayah:
                         if surah not in parsed:
@@ -293,9 +293,8 @@ class QuranDatabase:
         return None
 
 QURAN_DB = QuranDatabase()
-#endregion
-# ==============================================================================
-# bot_quran.py - Production-Ready Islamic & Quran Discord AI Bot (BAGIAN 2)
+#endregion# ==============================================================================
+# bot_quran.py - Production-Ready Islamic & Quran Discord AI Bot (PART 2)
 # ==============================================================================
 
 #region Search
@@ -325,9 +324,8 @@ class SmartSearch:
 
     @staticmethod
     def clean_query(query: str) -> str:
-        """Removes formatting tags like [Basa Sunda: ...] for accurate search."""
+        """Removes formatting tags for accurate search."""
         cleaned = re.sub(r'\[.*?\]', '', query)
-        cleaned = re.sub(r'^(Basa Sunda|Sundanese|English|Indonesian):\s*', '', cleaned, flags=re.IGNORECASE)
         return cleaned.strip()
 
     @classmethod
@@ -432,7 +430,7 @@ class GroqClient:
         self,
         prompt_text: str,
         system_prompt: str,
-        preferred_model: str = CONFIG.MODEL_RINGAN
+        preferred_model: str = CONFIG.MODEL_LIGHT
     ) -> str:
         if not CONFIG.GROQ_API_KEY:
             return "❌ Groq API key is not configured. Please set the GROQ_API_KEY or GROQ_API_KEY_QURAN environment variable."
@@ -444,7 +442,7 @@ class GroqClient:
 
         # Build prioritized model fallback chain
         model_chain = [preferred_model]
-        for m in [CONFIG.MODEL_BERAT, CONFIG.MODEL_RINGAN, CONFIG.MODEL_CADANGAN]:
+        for m in [CONFIG.MODEL_HEAVY, CONFIG.MODEL_LIGHT, CONFIG.MODEL_FALLBACK]:
             if m not in model_chain:
                 model_chain.append(m)
 
@@ -483,9 +481,8 @@ class GroqClient:
                     await asyncio.sleep((2 ** attempt) + 0.5)
 
         return "⚠️ Sorry, all Groq AI servers are currently busy. Please try again in a few moments."
-#endregion
-# ==============================================================================
-# bot_quran.py - Production-Ready Islamic & Quran Discord AI Bot (BAGIAN 3)
+#endregion# ==============================================================================
+# bot_quran.py - Production-Ready Islamic & Quran Discord AI Bot (PART 3)
 # ==============================================================================
 
 #region Prompt Builder
@@ -500,13 +497,12 @@ MANDATORY DALIL & CITATION RULES (STRICTLY ENFORCED FOR ALL COMMANDS & CHATS):
 1. MANDATORY EVIDENCE (DALIL) & SOURCE CITATION IN EVERY RESPONSE:
    - EVERY SINGLE RESPONSE MUST INCLUDE:
      a) Clear Evidence / Dalil (Original Arabic text/Matan + Translation derived strictly from official reference data).
-     b) Explicit Source Citation (e.g., "Surah Al-Baqarah: 183", "HR. Bukhari No. 1", "Dikutip dari Tafsir Ibn Kathir", "Berdasarkan Kitab Al-Majmu' Imam an-Nawawi", or "Kitab Fiqh al-Sunnah").
+     b) Explicit Source Citation (e.g., "Surah Al-Baqarah: 183", "Sahih al-Bukhari No. 1", "Tafsir Ibn Kathir", "Kitab Al-Majmu' by Imam an-Nawawi", or "Kitab Fiqh al-Sunnah").
    - NEVER provide a plain opinion without grounding it in Qur'an/Hadith Dalil and recognized scholarly/kitāb sources.
 
 2. STRICT TARGET LANGUAGE MANDATE (ZERO CONTEXT LEAKAGE & NO MIXING):
    - FULL RESPONSE TRANSLATION: You MUST write your ENTIRE response (explanations, Quran verse translations, Hadith matan/meaning translations, labels, citations, and disclaimer) strictly in the target language.
-   - MANDATORY HADITH & QURAN TRANSLATION: Even if injected web search references or Quran context are in Indonesian or English, you MUST fully translate all Hadith translations, Quran meanings, and labels into the user's target language (e.g., English, Sundanese, Aramaic, Japanese, Indonesian, etc.).
-   - NEVER leave Hadith translations or labels in Indonesian if the query is in English or any other language!
+   - MANDATORY HADITH & QURAN TRANSLATION: Even if injected web search references or Quran context are in another language, you MUST fully translate all Hadith translations, Quran meanings, and labels into the user's target language (e.g., English, French, Arabic, German, Spanish, etc.).
 
 3. QUR'ANIC ARABIC & TRANSLATION GROUNDING:
    - Whenever Quranic verses are cited, you MUST use the exact Arabic text provided in the prompt context from 'qpc-hafs.json'.
@@ -521,7 +517,7 @@ MANDATORY DALIL & CITATION RULES (STRICTLY ENFORCED FOR ALL COMMANDS & CHATS):
    - FOR MODERN/CONTEMPORARY ISSUES: Do not invent fake literal Hadith narrations; cite general Qur'anic principles, Kaidah Fiqhiyyah, and Muamalah sources.
 
 6. BIBLIOGRAPHIC ACCURACY & ANTI-FABRICATION RULE:
-   - NEVER fabricate book volume numbers (jilid), page numbers (halaman), or specific edition details. 
+   - NEVER fabricate book volume numbers, page numbers, or specific edition details. 
    - If the exact volume or page number is not present in the verified search references, cite ONLY the general book name (e.g., "Tafsir al-Jalālayn" or "Tafsir Ibn Kathir") without inventing fake volume or page numbers.
 
 7. CRITICAL QURAN PROHIBITION & HALLUCINATION GUARDRAIL:
@@ -529,8 +525,8 @@ MANDATORY DALIL & CITATION RULES (STRICTLY ENFORCED FOR ALL COMMANDS & CHATS):
 
 8. STRICT HADITH MATAN & QUOTATION GUARDRAIL (CRITICAL HADITH RULE):
    - NO FABRICATED HADITH QUOTES: Do NOT place Hadith matan inside quotation marks ("...") unless the exact, word-for-word text is explicitly provided in the verified web search references.
-   - DIRECT QUOTE vs. GENERAL MEANING: If the exact verbatim Hadith matan is NOT present in the search reference, state the response as the equivalent of "General Meaning of Hadith" (e.g., "General Meaning of Hadith" in English, "Kandungan/Makna Hadits" in Indonesian, "Maksud/Harti Hadits" in Sundanese) adapted strictly to your TARGET LANGUAGE. Translate the Hadith content fully into that target language.
-   - STRICT HADITH NUMBERING: Never invent or guess Hadith numbers (e.g., No. 3325). If the search context does not verify the exact Hadith number, cite ONLY the collection name (e.g., "HR. Bukhari, Kitab Ahadith al-Anbiya").
+   - DIRECT QUOTE vs. GENERAL MEANING: If the exact verbatim Hadith matan is NOT present in the search reference, state the response as "General Meaning of Hadith" adapted strictly to your TARGET LANGUAGE. Translate the Hadith content fully into that target language.
+   - STRICT HADITH NUMBERING: Never invent or guess Hadith numbers. If the search context does not verify the exact Hadith number, cite ONLY the collection name (e.g., "Sahih al-Bukhari, Book of Prophets").
 
 9. MANDATORY DISCLAIMER:
    - Always end with a short reminder in the target response language to consult qualified Islamic scholars for official fatwas on complex or modern issues.
@@ -545,14 +541,14 @@ MANDATORY DALIL & CITATION RULES (STRICTLY ENFORCED FOR ALL COMMANDS & CHATS):
                 f"\n\n[STRICT TARGET LANGUAGE OVERRIDE - CRITICAL]\n"
                 f"1. Target Language: FORCED to '{language_param.strip()}'.\n"
                 f"2. Write EVERY SINGLE WORD of your response in '{language_param.strip()}'.\n"
-                f"3. You MUST translate all Hadith translations/meanings, Quran translations, labels, and disclaimers into '{language_param.strip()}'. DO NOT leave Hadith translations in Indonesian/English!"
+                f"3. You MUST translate all Hadith translations/meanings, Quran translations, labels, and disclaimers into '{language_param.strip()}'."
             )
         else:
             return (
                 "\n\n[STRICT AUTOMATIC LANGUAGE MATCHING - CRITICAL]\n"
                 "1. Automatically detect the exact language used in the user's prompt/question above.\n"
-                "2. Write EVERY SINGLE WORD of your response in that SAME detected language (e.g., English, Sundanese, Aramaic, Japanese, Indonesian, etc.).\n"
-                "3. MANDATORY TRANSLATION: Translate ALL Hadith text/meanings, Quran translations, labels, explanations, and disclaimers into the user's detected language. NEVER output Hadith translations in Indonesian if the query is in another language!"
+                "2. Write EVERY SINGLE WORD of your response in that SAME detected language (e.g., English, French, Spanish, German, Arabic, etc.).\n"
+                "3. MANDATORY TRANSLATION: Translate ALL Hadith text/meanings, Quran translations, labels, explanations, and disclaimers into the user's detected language."
             )
 
     @staticmethod
@@ -704,7 +700,7 @@ async def on_message(message: discord.Message):
             jawaban = await BOT.groq_client.chat_completion(
                 prompt_text=prompt,
                 system_prompt=PromptBuilder.SYSTEM_PROMPT,
-                preferred_model=CONFIG.MODEL_RINGAN
+                preferred_model=CONFIG.MODEL_LIGHT
             )
             await send_long_message(message, jawaban, mode="reply")
 
@@ -750,7 +746,7 @@ async def send_quran_embed(destination: Any, surah_num: int, start_ayah: int, en
     verses = QURAN_DB.get_range(surah_num, start_ayah, end_v)
 
     if not verses:
-        msg = f"❌ Verse QS {surah_num}:{start_ayah} not found! Check Surah (1-114) and Ayah numbers."
+        msg = f"❌ Verse QS {surah_num}:{start_ayah} not found! Please verify Surah (1-114) and Ayah numbers."
         if reply_msg:
             await reply_msg.reply(msg)
         elif hasattr(destination, "followup"):
@@ -785,7 +781,7 @@ async def process_slash_query(
     interaction: discord.Interaction,
     prompt: str,
     language: Optional[str] = None,
-    model_override: str = CONFIG.MODEL_RINGAN
+    model_override: str = CONFIG.MODEL_LIGHT
 ):
     """Generic processor for slash commands with rate limiting and caching."""
     user_id = interaction.user.id
@@ -821,18 +817,20 @@ async def process_slash_query(
     except Exception as e:
         LOGGER.error(f"Error processing query '{prompt}': {e}")
         await interaction.followup.send(f"⚠️ An error occurred while processing your request: {e}")
-#endregion
-# ==============================================================================
-# bot_quran.py - Production-Ready Islamic & Quran Discord AI Bot (BAGIAN 4)
+#endregion# ==============================================================================
+# bot_quran.py - Production-Ready Islamic & Quran Discord AI Bot (PART 4)
 # ==============================================================================
 
 #region Commands
-@BOT.tree.command(name="help", description="Guide & commands for Islamic.AI Bot")
-async def slash_help(interaction: discord.Interaction):
+@BOT.tree.command(name="help", description="Guide & command list for Islamic.AI Bot")
+@app_commands.describe(
+    language="Optional: Type target response language (e.g. English, French, Arabic, Spanish)"
+)
+async def slash_help(interaction: discord.Interaction, language: Optional[str] = None):
     guide_text = (
         "📖 **Islamic.AI — Command Guide & Help**\n\n"
         "**Main Commands (Strictly Grounded with Dalil & Sources):**\n"
-        "• `/quran [surah] [ayat] [ayat_sampai]` - Fetch exact Arabic & Reference Translation directly from JSON Database (0% Hallucination).\n"
+        "• `/quran [surah] [verse] [verse_to] [language]` - Fetch exact Arabic & Reference Translation directly from JSON Database (0% Hallucination).\n"
         "• `/ask [prompt] [language]` - Ask any question (Includes Arabic Dalil + Kitāb citations).\n"
         "• `/tafsir [verse] [source] [language]` - Detailed Qur'anic exegesis powered by JSON Data + AI.\n"
         "• `/fiqh [question] [madhhab] [language]` - Ask Fiqh rulings with Arabic Dalil & Fiqh book sources.\n"
@@ -840,35 +838,41 @@ async def slash_help(interaction: discord.Interaction):
         "• `/dua [topic] [language]` - Search authentic Duas with Arabic text & source references.\n"
         "• `/dalil [topic] [language]` - Find evidence from Qur'an & Sunnah (Arabic + Translation + Citations).\n"
         "• `/search [query] [language]` - Search live web references with cited sources.\n"
-        "• `/language [language]` - Save your preferred default language.\n"
-        "• `/test` - Check Groq API connection, latency, & system health.\n"
+        "• `/language [language]` - Save your preferred default language for all responses.\n"
+        "• `/test [language]` - Check Groq API connection, latency, & system health.\n"
         "• `/ping` - Check bot status and Discord latency.\n\n"
         "💡 *Verse Shortcut Tip:* Type verse numbers like `1:1-7` or `2:255` directly in chat to view Arabic text & translation instantly!\n"
-        "💡 *Language Tip:* The bot automatically detects your question's language! You can also force a specific language using the optional `language` field.\n\n"
+        "💡 *Language Tip:* Every command now features a `language` option! The bot also automatically detects your question's language.\n\n"
         "--------------------------------------------------\n"
-        "📌 **NB:** If you encounter AI hallucinations or problems with the AI bot, please contact **@hanabihikari** via DM and also include a screenshot of the problem or hallucination."
+        "📌 **NB:** If you encounter AI hallucinations or problems with the AI bot, please contact **@hanabihikari** via DM with a screenshot."
     )
+    if language:
+        BOT.user_languages[interaction.user.id] = language
     await interaction.response.send_message(guide_text)
 
 @BOT.tree.command(name="quran", description="Get exact Qur'an Arabic text and reference translation directly from database")
 @app_commands.describe(
-    surah="Nomor Surah (1-114)",
-    ayat="Nomor Ayat",
-    ayat_sampai="Opsional: Rentang ayat akhir (misal: 7 untuk ayat 1-7)"
+    surah="Surah number (1-114)",
+    verse="Verse number",
+    verse_to="Optional: Ending verse range (e.g., 7 for verses 1-7)",
+    language="Optional: Type target response language (e.g., English, French, Arabic, Spanish)"
 )
 async def slash_quran(
     interaction: discord.Interaction, 
     surah: int, 
-    ayat: int, 
-    ayat_sampai: Optional[int] = None
+    verse: int, 
+    verse_to: Optional[int] = None,
+    language: Optional[str] = None
 ):
     await interaction.response.defer()
-    await send_quran_embed(interaction, surah, ayat, ayat_sampai)
+    if language:
+        BOT.user_languages[interaction.user.id] = language
+    await send_quran_embed(interaction, surah, verse, verse_to)
 
 @BOT.tree.command(name="ask", description="Ask anything about Islam (Arabic Dalil & Book Citations Included)")
 @app_commands.describe(
     prompt="Your question or topic",
-    language="Optional: Type target response language to force (e.g., Sundanese, English, Arabic, Indonesian)"
+    language="Optional: Type target response language (e.g., English, French, Arabic, Spanish)"
 )
 async def slash_ask(
     interaction: discord.Interaction, 
@@ -876,13 +880,13 @@ async def slash_ask(
     language: Optional[str] = None
 ):
     await interaction.response.defer()
-    await process_slash_query(interaction, prompt, language, CONFIG.MODEL_RINGAN)
+    await process_slash_query(interaction, prompt, language, CONFIG.MODEL_LIGHT)
 
 @BOT.tree.command(name="tafsir", description="Detailed Qur'anic exegesis (Injected with Official JSON Data)")
 @app_commands.describe(
     verse="Verse reference (e.g., '2:255')",
     source="Optional: Tafsir book (Ibn Kathir, Jalalayn, etc.)",
-    language="Optional: Type target response language to force (e.g., Sundanese, English, Arabic, Indonesian)"
+    language="Optional: Type target response language (e.g., English, French, Arabic, Spanish)"
 )
 async def slash_tafsir(
     interaction: discord.Interaction, 
@@ -892,13 +896,13 @@ async def slash_tafsir(
 ):
     await interaction.response.defer()
     query = f"Provide a comprehensive tafsir for verse {verse}. Primary reference requested: {source if source else 'Tafsir Ibn Kathir / Jalalayn'}."
-    await process_slash_query(interaction, query, language, CONFIG.MODEL_BERAT)
+    await process_slash_query(interaction, query, language, CONFIG.MODEL_HEAVY)
 
 @BOT.tree.command(name="fiqh", description="Ask Fiqh rulings with Arabic Dalil & Kitāb sources")
 @app_commands.describe(
     question="Your jurisprudence (Fiqh) question",
     madhhab="Select Madhhab perspective",
-    language="Optional: Type target response language to force (e.g., Sundanese, English, Arabic, Indonesian)"
+    language="Optional: Type target response language (e.g., English, French, Arabic, Spanish)"
 )
 @app_commands.choices(
     madhhab=[
@@ -920,13 +924,13 @@ async def slash_fiqh(
     await interaction.response.defer()
     chosen_madhhab = madhhab.value if madhhab else "comparative_all"
     query = f"Fiqh Question: '{question}'. Requested Madhhab: {chosen_madhhab.upper()}."
-    await process_slash_query(interaction, query, language, CONFIG.MODEL_BERAT)
+    await process_slash_query(interaction, query, language, CONFIG.MODEL_HEAVY)
 
 @BOT.tree.command(name="hadith", description="Search authentic Hadiths with Arabic Matan & Collection Citations")
 @app_commands.describe(
     topic="Hadith topic or keyword",
     book="Optional: Hadith Collection (Bukhari, Muslim, Abu Dawud, etc.)",
-    language="Optional: Type target response language to force (e.g., Sundanese, English, Arabic, Indonesian)"
+    language="Optional: Type target response language (e.g., English, French, Arabic, Spanish)"
 )
 async def slash_hadith(
     interaction: discord.Interaction, 
@@ -936,12 +940,12 @@ async def slash_hadith(
 ):
     await interaction.response.defer()
     query = f"Search authentic Hadiths regarding '{topic}'. Requested Collection: {book if book else 'Kutubus Sittah'}."
-    await process_slash_query(interaction, query, language, CONFIG.MODEL_RINGAN)
+    await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT)
 
 @BOT.tree.command(name="dua", description="Search authentic Duas and Adhkar with Arabic Text & Sources")
 @app_commands.describe(
     topic="Topic or situation for the Dua",
-    language="Optional: Type target response language to force (e.g., Sundanese, English, Arabic, Indonesian)"
+    language="Optional: Type target response language (e.g., English, French, Arabic, Spanish)"
 )
 async def slash_dua(
     interaction: discord.Interaction, 
@@ -950,12 +954,12 @@ async def slash_dua(
 ):
     await interaction.response.defer()
     query = f"Provide authentic Duas for topic/situation: '{topic}'."
-    await process_slash_query(interaction, query, language, CONFIG.MODEL_RINGAN)
+    await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT)
 
 @BOT.tree.command(name="dalil", description="Find Qur'anic and Hadith evidence (Arabic + Translation + Sources)")
 @app_commands.describe(
     topic="Topic or issue to search evidence for",
-    language="Optional: Type target response language to force (e.g., Sundanese, English, Arabic, Indonesian)"
+    language="Optional: Type target response language (e.g., English, French, Arabic, Spanish)"
 )
 async def slash_dalil(
     interaction: discord.Interaction, 
@@ -964,12 +968,12 @@ async def slash_dalil(
 ):
     await interaction.response.defer()
     query = f"Provide authentic Dalil (Qur'an verses and Sahih Hadiths) for topic: '{topic}'."
-    await process_slash_query(interaction, query, language, CONFIG.MODEL_RINGAN)
+    await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT)
 
 @BOT.tree.command(name="search", description="Search Islamic research references from the web with citations")
 @app_commands.describe(
     query="Search keywords",
-    language="Optional: Type target response language to force (e.g., Sundanese, English, Arabic, Indonesian)"
+    language="Optional: Type target response language (e.g., English, French, Arabic, Spanish)"
 )
 async def slash_search(
     interaction: discord.Interaction, 
@@ -977,23 +981,30 @@ async def slash_search(
     language: Optional[str] = None
 ):
     await interaction.response.defer()
-    await process_slash_query(interaction, query, language, CONFIG.MODEL_RINGAN)
+    await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT)
 
-@BOT.tree.command(name="language", description="Set your preferred response language")
-@app_commands.describe(language="Language name e.g. English, Arabic, Sundanese, Indonesian")
+@BOT.tree.command(name="language", description="Set your preferred default response language")
+@app_commands.describe(language="Language name e.g. English, French, Arabic, Spanish, German")
 async def slash_language(interaction: discord.Interaction, language: str):
     BOT.user_languages[interaction.user.id] = language
-    await interaction.response.send_message(f"✅ Your language preference has been set to: **{language}**")
+    await interaction.response.send_message(f"✅ Your preferred response language has been set to: **{language}**")
 
 @BOT.tree.command(name="test", description="Test Groq API connection, latency, and system health")
-async def slash_test(interaction: discord.Interaction):
+@app_commands.describe(
+    language="Optional: Type target response language (e.g. English, French, Arabic)"
+)
+async def slash_test(interaction: discord.Interaction, language: Optional[str] = None):
     await interaction.response.defer()
     try:
         start_time = time.time()
+        
+        target_lang = language or BOT.user_languages.get(interaction.user.id) or "English"
+        test_prompt = f"System test: Provide 1 short Islamic greeting in {target_lang}."
+        
         respon = await BOT.groq_client.chat_completion(
-            prompt_text="System test: Provide 1 short Islamic greeting in English.",
+            prompt_text=test_prompt,
             system_prompt="You are a system tester.",
-            preferred_model=CONFIG.MODEL_RINGAN
+            preferred_model=CONFIG.MODEL_LIGHT
         )
         api_latency = round((time.time() - start_time) * 1000)
         discord_ping = round(BOT.latency * 1000)
@@ -1006,9 +1017,9 @@ async def slash_test(interaction: discord.Interaction):
             f"📖 **Quran Dual JSON Database:** `{db_status}`\n"
             f"⚡ **API Latency:** `{api_latency}ms`\n"
             f"📡 **Discord Ping:** `{discord_ping}ms`\n"
-            f"🧠 **Active Engine:** Global Dual-JSON Grounding RAG (`{CONFIG.MODEL_RINGAN}`)\n"
+            f"🧠 **Active Engine:** Global Dual-JSON Grounding RAG (`{CONFIG.MODEL_LIGHT}`)\n"
             f"⏰ **Streamlit Keep-Alive:** Active (`{CONFIG.STREAMLIT_URL}`)\n\n"
-            f"💬 **Output Test Sample:**\n> {respon}"
+            f"💬 **Output Test Sample ({target_lang}):**\n> {respon}"
         )
         await interaction.followup.send(status_msg)
     except Exception as e:
