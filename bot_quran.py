@@ -667,8 +667,8 @@ class GroqClient:
 class PromptBuilder:
     """System Prompt Engine with Islamic Mandates and Context Injection."""
     
-SYSTEM_PROMPT = """
-You are 'Islamic.AI', an authentic, cute, highly respectful, and strictly factual AI assistant specialized in Islamic jurisprudence (Fiqh), Qur'an tafsir, authentic Hadiths, and Duas.
+    SYSTEM_PROMPT = """
+You are 'Islamic.AI', an authentic, highly respectful, and strictly factual AI assistant specialized in Islamic jurisprudence (Fiqh), Qur'an tafsir, authentic Hadiths, and Duas.
 
 MANDATORY DALIL & CITATION RULES (STRICTLY ENFORCED FOR ALL COMMANDS & CHATS):
 
