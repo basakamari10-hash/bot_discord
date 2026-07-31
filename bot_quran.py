@@ -487,6 +487,7 @@ class SearchCategory(Enum):
     DUA = auto()
     AQIDAH = auto()
     ZAIDI = auto()
+    JAAFARI = auto()
     PROGRESSIVE = auto()
     GENERAL = auto()
 
@@ -505,6 +506,9 @@ class SmartSearch:
         ],
         SearchCategory.ZAIDI: [
             "salvationark.com", "zaydi.info", "ziydia.com"
+        ],
+        SearchCategory.JAAFARI: [
+            "al-islam.org", "sistani.org", "shiavault.com", "makarem.ir"
         ],
         SearchCategory.PROGRESSIVE: [
             "mpvusa.org", "iijt.org", "islamandlibertynetwork.org"
@@ -534,6 +538,8 @@ class SmartSearch:
         q = query.lower()
         if any(w in q for w in ["progressive", "reformist", "modernist", "progressive muslims"]):
             return SearchCategory.PROGRESSIVE
+        if any(w in q for w in ["ja'fari", "jafari", "shia twelver", "twelver", "imami", "شيعة", "جعفري"]):
+            return SearchCategory.JAAFARI
         if any(w in q for w in ["zaidi", "zaydism", "zaydiyya", "zaidiyyah", "الزيدية"]):
             return SearchCategory.ZAIDI
         if any(w in q for w in ["hadith", "sunnah", "bukhari", "muslim", "matan", "حديث", "سنة"]):
@@ -1093,7 +1099,6 @@ async def slash_help(interaction: discord.Interaction, language: Optional[str] =
         "• `/dua [topic] [language]` - Search authentic Duas with Adhkar Cluster Search + Arabic text & sources.\n"
         "• `/dalil [topic] [language]` - Find evidence from Qur'an & Sunnah (Arabic + Translation + Citations).\n"
         "• `/search [query] [language]` - Search live web references with cited sources.\n"
-        "• `/language [language]` - Save your preferred default language for all responses.\n"
         "• `/test [language]` - Check Groq API connection, latency, & system health.\n"
         "• `/ping` - Check bot status and Discord latency.\n\n"
         "💡 *Verse Shortcut Tip:* Type verse numbers like `1:1-7`, `2:255`, `An-Nur 2`, or `Sourate Al-Baqara 255` directly in chat to view Arabic text & translation instantly!\n"
@@ -1245,12 +1250,6 @@ async def slash_search(
 ):
     await interaction.response.defer()
     await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT, command_type="search")
-
-@BOT.tree.command(name="language", description="Set your preferred default response language")
-@app_commands.describe(language="Language name e.g. English, French, Arabic, Spanish, German")
-async def slash_language(interaction: discord.Interaction, language: str):
-    BOT.user_languages[interaction.user.id] = language
-    await interaction.response.send_message(f"✅ Your preferred response language has been set to: **{language}**")
 
 @BOT.tree.command(name="test", description="Test Groq API connection, latency, and system health")
 @app_commands.describe(
