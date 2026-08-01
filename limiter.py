@@ -1,6 +1,7 @@
 import time
 import asyncio
 from typing import Dict, Tuple
+from config import CONFIG
 
 class RateLimiter:
     """Per-user cooldown and concurrent execution concurrency manager."""
@@ -19,3 +20,9 @@ class RateLimiter:
                 return True, self.cooldown - elapsed
             self.user_last_request[user_id] = now
             return False, 0.0
+
+# Inisialisasi global rate limiter menggunakan konfigurasi
+GLOBAL_RATE_LIMITER = RateLimiter(
+    cooldown=CONFIG.USER_COOLDOWN_SECONDS,
+    max_concurrent=CONFIG.CONCURRENT_REQUESTS_LIMIT
+)
