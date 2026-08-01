@@ -7,7 +7,7 @@ from logger import LOGGER
 from cache import GLOBAL_CACHE
 
 try:
-    from duckduckgo_search import DDGS
+    from ddgs import DDGS
     HAS_DDGS = True
 except ImportError:
     HAS_DDGS = False
