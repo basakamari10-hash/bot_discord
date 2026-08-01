@@ -41,13 +41,13 @@ except Exception as e:
 KEY_QURAN = env.get("GROQ_API_KEY_QURAN") or env.get("GROQ_API_KEY")
 
 # ---------------------------------------------------------
-# 3. Spawn Subprocess Bot Discord (Hanya 1x secara Global)
+# 3. Spawn Subprocess Bot Discord (Menggunakan main.py)
 # ---------------------------------------------------------
 @st.cache_resource
 def start_bots():
-    print("🚀 Memulai subprocess Bot Islamic AI...")
-    # Pastikan file bot_quran.py ada di folder yang sama
-    p_quran = subprocess.Popen([sys.executable, "bot_quran.py"], env=env)
+    print("🚀 Memulai subprocess Bot Islamic AI (main.py)...")
+    # Diubah dari bot_quran.py menjadi main.py
+    p_quran = subprocess.Popen([sys.executable, "main.py"], env=env)
     return p_quran
 
 bot_quran_proc = start_bots()
