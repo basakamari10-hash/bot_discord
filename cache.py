@@ -1,6 +1,7 @@
 import time
 import asyncio
 from typing import Dict, Tuple, Any, Optional
+from config import CONFIG
 
 class TTLCache:
     """Thread-safe and async-friendly in-memory TTL Cache."""
@@ -23,3 +24,6 @@ class TTLCache:
         async with self._lock:
             expiration = time.time() + (ttl if ttl is not None else self._default_ttl)
             self._cache[key] = (value, expiration)
+
+# Inisialisasi global cache menggunakan TTL dari config
+GLOBAL_CACHE = TTLCache(default_ttl=CONFIG.CACHE_TTL_GROQ)
