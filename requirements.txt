@@ -1,4 +1,4 @@
 streamlit
 discord.py
 requests
-duckduckgo-search
+ddgs
