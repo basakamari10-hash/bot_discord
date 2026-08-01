@@ -771,10 +771,11 @@ MANDATORY DALIL & CITATION RULES (STRICTLY ENFORCED FOR ALL COMMANDS & CHATS):
         else:
             return (
                 f"🚨 [CRITICAL AUTOMATIC LANGUAGE MATCHING — MANDATORY] 🚨\n"
-                f"1. Detect the primary language used in the USER's prompt/question.\n"
-                f"2. You MUST write your ENTIRE response strictly in that SAME detected language (e.g., Japanese, Indonesian, French, etc.).\n"
-                f"3. Even if search references below are in English, translate ALL explanations, tables, and footers to the USER'S language.\n"
-                f"4. DO NOT default to English!"
+                f"1. STRICT SCRIPT & LANGUAGE DETECTION: Detect the EXACT language and script used in the USER's prompt/question.\n"
+                f"   - If the user asks in ARABIC (e.g., 'حكم الاستمناء'), your entire response (explanations, table headers, bullet points, and footers) MUST BE IN ARABIC (العربية).\n"
+                f"   - If the user asks in INDONESIAN, respond entirely in INDONESIAN.\n"
+                f"2. NO ENGLISH FALLBACK: Do NOT fallback to English just because the search results or prompt template are in English.\n"
+                f"3. Translate ALL injected web context and explanations into the user's input language!"
             )
 
     @staticmethod
@@ -948,25 +949,42 @@ async def on_message(message: discord.Message):
 
 #region Reusable Helpers
 async def send_long_message(target: Any, text: str, mode: str = "reply"):
-    """Splits and sends long responses safely without cutting words in half."""
+    """Splits and sends long responses safely without breaking Markdown tables or paragraphs."""
     if not text:
         return
     
-    limit = 1800
+    limit = 1900 # Discord safe limit
     chunks = []
     
-    while len(text) > limit:
-        cut_index = text.rfind(' ', 0, limit)
-        if cut_index == -1:
-            cut_index = limit
+    # Split by double newline (paragraphs) to protect tables and text blocks
+    paragraphs = text.split('\n\n')
+    current_chunk = ""
+
+    for p in paragraphs:
+        if len(current_chunk) + len(p) + 2 > limit:
+            if current_chunk:
+                chunks.append(current_chunk.strip())
+                current_chunk = ""
             
-        chunks.append(text[:cut_index])
-        text = text[cut_index:].strip()
-        
-    if text:
-        chunks.append(text)
+            # If a single paragraph/table is insanely huge, fallback to line-splitting
+            if len(p) > limit:
+                lines = p.split('\n')
+                for line in lines:
+                    if len(current_chunk) + len(line) + 1 > limit:
+                        chunks.append(current_chunk.strip())
+                        current_chunk = line + "\n"
+                    else:
+                        current_chunk += line + "\n"
+            else:
+                current_chunk = p + "\n\n"
+        else:
+            current_chunk += p + "\n\n"
+            
+    if current_chunk:
+        chunks.append(current_chunk.strip())
 
     for i, chunk in enumerate(chunks):
+        if not chunk: continue
         if mode == "reply":
             if i == 0 and hasattr(target, "reply"):
                 await target.reply(chunk)
@@ -1058,7 +1076,8 @@ async def process_slash_query(
         elif command_type == "fiqh":
             type_instruction = (
                 "\n\n[STRICT COMMAND MANDATE: FIQH SPECIFIC (/fiqh)]\n"
-                "1. Focus strictly on Islamic jurisprudence rulings, Madhhab perspectives, and Fiqh book citations from verified fatwa repositories."
+                "1. Focus strictly on Islamic jurisprudence rulings, Madhhab perspectives, and Fiqh book citations from verified fatwa repositories.\n"
+                "2. CRITICAL MADHHAB FOCUS: If the user requests a specific Madhhab or perspective, dedicate 95% of your answer ONLY to that selected perspective. DO NOT list or create tables for other Madhhabs unless absolutely necessary for brief context!"
             )
 
         # Sandwich Prompt: Enforce Language Rule at Top & Bottom
