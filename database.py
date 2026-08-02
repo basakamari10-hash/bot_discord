@@ -186,11 +186,9 @@ class QuranDatabase:
         parsed: Dict[str, Dict[str, str]] = {}
         if isinstance(raw_data, dict):
             for key, val in raw_data.items():
-                surah = ""
-                ayah = ""
+                surah, ayah = "", ""
                 if ":" in key:
-                    parts = key.split(":")
-                    surah, ayah = parts[0], parts[1]
+                    surah, ayah = key.split(":", 1)
                 elif isinstance(val, dict):
                     surah = str(val.get("surah") or val.get("surah_number") or val.get("chapter") or "")
                     ayah = str(val.get("ayah") or val.get("verse") or val.get("verse_number") or "")
@@ -232,10 +230,10 @@ class QuranDatabase:
         return parsed
 
     def get_verse(self, surah_num: int, ayah_num: int) -> Optional[Dict[str, Any]]:
-        s_key = str(surah_num)
-        a_key = str(ayah_num)
+        s_key, a_key = str(surah_num), str(ayah_num)
         ar_text = self.arabic_data.get(s_key, {}).get(a_key, "")
         tr_text = self.translation_data.get(s_key, {}).get(a_key, "")
+        
         if ar_text or tr_text:
             s_official = SURAH_OFFICIAL_NAMES[surah_num] if 1 <= surah_num <= 114 else f"Surah {surah_num}"
             return {
@@ -248,17 +246,13 @@ class QuranDatabase:
         return None
 
     def get_range(self, surah_num: int, start_ayah: int, end_ayah: int) -> List[Dict[str, Any]]:
-        results = []
-        for a in range(start_ayah, end_ayah + 1):
-            v = self.get_verse(surah_num, a)
-            if v:
-                results.append(v)
-        return results
+        return [v for a in range(start_ayah, end_ayah + 1) if (v := self.get_verse(surah_num, a))]
 
     @staticmethod
     def parse_verse_key(text: str) -> Optional[Tuple[int, int, Optional[int]]]:
         if not text:
             return None
+            
         match_num = re.search(r'\b(\d{1,3}):(\d{1,3})(?:-(\d{1,3}))?\b', text)
         if match_num:
             surah = int(match_num.group(1))
@@ -270,15 +264,18 @@ class QuranDatabase:
         clean_text = text.lower()
         clean_text = re.sub(r'\b(surah|sourate|sura|suresi|chapter|qs|qur\'an|quran|ayat|verse|سورة|سوره)\b', '', clean_text)
         match_name = re.search(r'([a-z\'\-\u0600-\u06FF\s]+)\s*[:\s]\s*(\d{1,3})(?:\s*-\s*(\d{1,3}))?', clean_text)
+        
         if match_name:
             raw_s_name = match_name.group(1).strip()
             start_a = int(match_name.group(2))
             end_a = int(match_name.group(3)) if match_name.group(3) else None
             normalized_name = re.sub(r'^(al|an|ash|at|az|ar|ad|el|el-)\-?', '', raw_s_name).strip()
+            
             if raw_s_name in SURAH_MAP:
                 return SURAH_MAP[raw_s_name], start_a, end_a
             elif normalized_name in SURAH_MAP:
                 return SURAH_MAP[normalized_name], start_a, end_a
+                
         return None
 
 QURAN_DB = QuranDatabase()
