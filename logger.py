@@ -2,7 +2,6 @@ import sys
 import logging
 
 def setup_logger() -> logging.Logger:
-    """Configures structured logging."""
     logger = logging.getLogger("IslamicAI")
     logger.setLevel(logging.INFO)
     
