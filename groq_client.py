@@ -14,9 +14,8 @@ class GroqClient:
     def clean_repetition(text: str) -> str:
         if not text:
             return ""
-        pattern_word = r'(\b[\w\u0600-\u06FF\u0100-\u024F]+\b)(?:\s+\1){3,}'
-        cleaned = re.sub(pattern_word, r'\1', text, flags=re.IGNORECASE)
-        return cleaned.strip()
+        pattern = r'(\b[\w\u0600-\u06FF\u0100-\u024F]+\b)(?:\s+\1){3,}'
+        return re.sub(pattern, r'\1', text, flags=re.IGNORECASE).strip()
 
     async def chat_completion(
         self,
