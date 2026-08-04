@@ -274,7 +274,7 @@ async def process_slash_query(
 
 
 # =========================================================
-# COMMANDS
+# COMMANDS LIST
 # =========================================================
 
 @BOT.tree.command(name="help", description="Guide & command list")
@@ -313,7 +313,6 @@ async def slash_tafsir(
     language: Optional[str] = None
 ):
     await interaction.response.defer()
-    
     if language:
         BOT.user_languages[interaction.user.id] = language
 
@@ -391,7 +390,6 @@ async def slash_hadith(
     language: Optional[str] = None
 ):
     await interaction.response.defer()
-    
     if language:
         BOT.user_languages[interaction.user.id] = language
         
@@ -421,7 +419,7 @@ async def slash_hadith(
     await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT, command_type="hadith")
 
 # =========================================================
-# UNIVERSAL ISLAMIC API COMMANDS (islamic_client.py)
+# ISLAMICAPI.COM COMMANDS
 # =========================================================
 
 @BOT.tree.command(name="dua", description="Search for authentic Duas from Quran & Sunnah")
@@ -431,7 +429,6 @@ async def slash_dua(interaction: discord.Interaction, topic: str, language: Opti
         BOT.user_languages[interaction.user.id] = language
     
     raw_data = await BOT.islamic_client.get_dua(topic) if BOT.islamic_client else ""
-
     query = (
         f"User is searching for a Dua about: '{topic}'.\n\nISLAMICAPI DATA:\n{raw_data}\n\n"
         f"TASK: Show the Arabic text from the data above, then translate the meaning and reference naturally matching the user's input language without hallucinating."
@@ -445,7 +442,6 @@ async def slash_asmaulhusna(interaction: discord.Interaction, name: str, languag
         BOT.user_languages[interaction.user.id] = language
     
     raw_data = await BOT.islamic_client.get_asmaul_husna(name) if BOT.islamic_client else ""
-    
     query = (
         f"Explain the Asmaul Husna: '{name}'.\n\nISLAMICAPI DATA:\n{raw_data}\n\n"
         f"TASK: Based on the data, explain the profound meaning and how to apply this attribute in daily life. Match the user's input language."
@@ -459,7 +455,6 @@ async def slash_prophet(interaction: discord.Interaction, prophet_name: str, lan
         BOT.user_languages[interaction.user.id] = language
     
     raw_data = await BOT.islamic_client.get_prophet_story(prophet_name) if BOT.islamic_client else ""
-    
     query = (
         f"Tell the story of Prophet '{prophet_name}'.\n\nISLAMICAPI DATA:\n{raw_data}\n\n"
         f"TASK: Summarize the story, mention his miracles, and list the wisdom/lessons we can learn. Match the user's input language."
@@ -473,7 +468,6 @@ async def slash_prayertimes(interaction: discord.Interaction, city: str, languag
         BOT.user_languages[interaction.user.id] = language
     
     raw_data = await BOT.islamic_client.get_prayer_times(city) if BOT.islamic_client else ""
-    
     query = (
         f"Show prayer times for city '{city}'.\n\nISLAMICAPI DATA:\n{raw_data}\n\n"
         f"TASK: Present the prayer times (Fajr, Dhuhr, Asr, Maghrib, Isha) neatly using bullet points matching the user's input language."
@@ -487,7 +481,6 @@ async def slash_dalil(interaction: discord.Interaction, topic: str, language: Op
     await interaction.response.defer()
     if language:
         BOT.user_languages[interaction.user.id] = language
-    
     query = f"Provide authentic Dalil for topic: '{topic}'."
     await process_slash_query(interaction, query, language, CONFIG.MODEL_HEAVY, command_type="dalil")
 
@@ -496,7 +489,6 @@ async def slash_search(interaction: discord.Interaction, query: str, language: O
     await interaction.response.defer()
     if language:
         BOT.user_languages[interaction.user.id] = language
-        
     await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT, command_type="search")
 
 @BOT.tree.command(name="ping", description="Check bot latency")
