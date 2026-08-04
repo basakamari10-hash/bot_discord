@@ -16,7 +16,7 @@ from search import SmartSearch
 from groq_client import GroqClient
 from prompt_builder import PromptBuilder
 
-# Tambahkan import HadithClient dari hadith_client.py Anda
+# Import HadithClient dari hadith_client.py
 from hadith_client import HadithClient
 
 class IslamicBot(commands.Bot):
@@ -68,7 +68,7 @@ BOT = IslamicBot()
 @BOT.event
 async def on_ready():
     LOGGER.info(f"Islamic.AI Bot ({BOT.user}) is Online!")
-    await BOT.change_presence(activity=discord.Game(name="/help | /quran | /fiqh | /tafsir"))
+    await BOT.change_presence(activity=discord.Game(name="/help | /quran | /fiqh | /tafsir | /hadith"))
 
 @BOT.event
 async def on_message(message: discord.Message):
@@ -283,14 +283,11 @@ async def slash_ask(interaction: discord.Interaction, prompt: str, language: Opt
     await interaction.response.defer()
     await process_slash_query(interaction, prompt, language, CONFIG.MODEL_HEAVY, command_type="ask")
 
-# =======================================================
-# UPDATED /TAFSIR COMMAND (WITH CHOICES)
-# =======================================================
 @BOT.tree.command(name="tafsir", description="Detailed Qur'anic exegesis")
 @app_commands.choices(
     source=[
         app_commands.Choice(name="Tafsir Ibn Kathir", value="en-tafisr-ibn-kathir.json"),
-        app_commands.Choice(name="Tafsir Ma'ariful Qur'an", value="en-tafsir-maarif-ul-quran.json"),
+        app_commands.Choice(name="Tafsir Ma'ariful Qur'an", value="en-tafisr-maarif-ul-quran.json"),
         app_commands.Choice(name="Tafsir Al-Jalalayn", value="tafsir-al-jalalayn.json")
     ]
 )
@@ -302,11 +299,9 @@ async def slash_tafsir(
 ):
     await interaction.response.defer()
     
-    # Menentukan nilai default jika pengguna tidak memilih sumber
     chosen_file = source.value if source else "en-tafisr-ibn-kathir.json"
     chosen_name = source.name if source else "Tafsir Ibn Kathir"
     
-    # Menggabungkan nama tafsir dan nama file JSON ke dalam prompt query
     query = (
         f"Provide comprehensive Tafsir for verse '{verse}' using {chosen_name}. "
         f"[IMPORTANT: Extract and base your explanation entirely on the data from the '{chosen_file}' database file]."
@@ -334,13 +329,24 @@ async def slash_fiqh(interaction: discord.Interaction, question: str, madhhab: O
     await process_slash_query(interaction, query, language, CONFIG.MODEL_HEAVY, command_type="fiqh")
 
 # =======================================================
-# UPDATED /HADITH COMMAND (API INTEGRATION)
+# /HADITH COMMAND (API INTEGRATION + DROPDOWN CHOICES + MULTI-LANG)
 # =======================================================
-@BOT.tree.command(name="hadith", description="Search authentic Hadiths via HadithAPI")
+@BOT.tree.command(name="hadith", description="Cari hadits terverifikasi berdasarkan topik & kitab pilihan.")
+@app_commands.choices(book=[
+    app_commands.Choice(name="Sahih al-Bukhari", value="sahih-bukhari"),
+    app_commands.Choice(name="Sahih Muslim", value="sahih-muslim"),
+    app_commands.Choice(name="Sunan an-Nasai", value="sunan-an-nasai"),
+    app_commands.Choice(name="Sunan Abu Dawud", value="sunan-abu-dawud"),
+    app_commands.Choice(name="Jami at-Tirmidhi", value="jami-at-tirmidhi"),
+    app_commands.Choice(name="Sunan Ibn Majah", value="sunan-ibn-majah"),
+    app_commands.Choice(name="Muwatta Malik", value="muwatta-malik"),
+    app_commands.Choice(name="Musnad Ahmad", value="musnad-ahmad"),
+    app_commands.Choice(name="Sunan al-Darimi", value="sunan-darimi"),
+])
 async def slash_hadith(
     interaction: discord.Interaction, 
     topic: str, 
-    book: Optional[str] = None, 
+    book: Optional[app_commands.Choice[str]] = None, 
     language: Optional[str] = None
 ):
     await interaction.response.defer()
@@ -348,26 +354,35 @@ async def slash_hadith(
     if language:
         BOT.user_languages[interaction.user.id] = language
         
-    requested_book = book if book else "bukhari"
+    book_value = book.value if book else None
+    book_display_name = book.name if book else "Semua Kitab Utama"
     
-    # 1. Ambil data hadis dari hadith_client.py (hadithapi.com) terlebih dahulu
+    chosen_lang = language or BOT.user_languages.get(interaction.user.id, "id")
+    
+    # 1. Ambil data dari HadithAPI via HadithClient
     hadith_api_results = ""
     try:
         if BOT.hadith_client:
-            # Pastikan nama method ini sesuai dengan yang ada di hadith_client.py
-            hadith_api_results = await BOT.hadith_client.search_hadiths(topic=topic, book=requested_book)
+            hadith_api_results = await BOT.hadith_client.search_hadiths(
+                topic=topic, 
+                book=book_value, 
+                language=chosen_lang
+            )
     except Exception as e:
-        LOGGER.error(f"Failed to fetch from hadith_client: {e}")
-        hadith_api_results = "Gagal mengambil data langsung dari HadithAPI. Menggunakan database umum/pengetahuan model."
+        LOGGER.error(f"Gagal mengambil data dari hadith_client: {e}")
+        hadith_api_results = "Gagal mengambil data langsung dari HadithAPI. Menggunakan pengetahuan model."
 
-    # 2. Buat query yang menggabungkan hasil API hadis ke dalam prompt LLM
+    # 2. Susun query untuk LLM agar memformat dan menerjemahkan hasilnya sesuai bahasa user
     query = (
-        f"User is searching for Hadith about: '{topic}' in book: '{requested_book}'.\n\n"
-        f"RETRIEVED HADITH API DATA (from hadithapi.com):\n{hadith_api_results}\n\n"
-        f"Please structure a clean response featuring the authentic Hadith text (Arabic), translation, narrator, and book reference based on the retrieved data above."
+        f"User mencari Hadits tentang topik: '{topic}' dalam kitab: '{book_display_name}'.\n\n"
+        f"DATA MENTAH DARI HADITHAPI (Raw source):\n{hadith_api_results}\n\n"
+        f"TUGAS:\n"
+        f"1. Tampilkan teks Matan Hadits dalam bahasa Arab secara utuh dan original.\n"
+        f"2. Terjemahkan nomor hadits, nama bab/heading, perawi, serta arti hadits tersebut SEPENUHNYA ke dalam bahasa **{chosen_lang.upper()}** berdasarkan data mentah di atas.\n"
+        f"3. Pastikan formatnya rapi, sopan, dan sesuai standar referensi ilmiah Islam."
     )
     
-    await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT, command_type="hadith")
+    await process_slash_query(interaction, query, chosen_lang, CONFIG.MODEL_LIGHT, command_type="hadith")
 
 @BOT.tree.command(name="dua", description="Search authentic Duas")
 async def slash_dua(interaction: discord.Interaction, topic: str, language: Optional[str] = None):
