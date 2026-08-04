@@ -16,10 +16,10 @@ from search import SmartSearch
 from groq_client import GroqClient
 from prompt_builder import PromptBuilder
 
-# Helper dan Clients
+# Clients
 from helper import get_tafsir_with_fallback
 from hadith_client import HadithClient
-from dua_client import DuaAPIClient  # <-- Import Client Doa Baru
+from islamic_client import IslamicAPIClient
 
 class IslamicBot(commands.Bot):
     def __init__(self):
@@ -30,14 +30,14 @@ class IslamicBot(commands.Bot):
         self.session: Optional[aiohttp.ClientSession] = None
         self.groq_client: Optional[GroqClient] = None
         self.hadith_client: Optional[HadithClient] = None
-        self.dua_client: Optional[DuaAPIClient] = None  # <-- Inisialisasi variabel doa
+        self.islamic_client: Optional[IslamicAPIClient] = None
         self.user_languages: Dict[int, str] = {}
 
     async def setup_hook(self):
         self.session = aiohttp.ClientSession()
         self.groq_client = GroqClient(self.session)
         self.hadith_client = HadithClient(self.session)
-        self.dua_client = DuaAPIClient(self.session)  # <-- Setup instance doa
+        self.islamic_client = IslamicAPIClient(self.session)
         QURAN_DB.load_data()
         
         try:
@@ -72,7 +72,7 @@ BOT = IslamicBot()
 @BOT.event
 async def on_ready():
     LOGGER.info(f"Islamic.AI Bot ({BOT.user}) is Online!")
-    await BOT.change_presence(activity=discord.Game(name="/help | /quran | /tafsir | /hadith | /dua"))
+    await BOT.change_presence(activity=discord.Game(name="/help | Authentic Islamic AI"))
 
 @BOT.event
 async def on_message(message: discord.Message):
@@ -120,7 +120,7 @@ async def on_message(message: discord.Message):
             quran_ctx = PromptBuilder.extract_quran_context(clean_prompt)
             
             user_lang = BOT.user_languages.get(message.author.id)
-            lang_instruction = PromptBuilder.create_language_instruction(user_lang)
+            lang_instruction = PromptBuilder.create_language_instruction(user_lang, clean_prompt)
 
             prompt = (
                 f"{lang_instruction}\n\n"
@@ -237,8 +237,11 @@ async def process_slash_query(
         web_ref = await SmartSearch.execute_search(BOT.session, prompt)
         quran_ctx = PromptBuilder.extract_quran_context(prompt)
         
-        chosen_lang = language or BOT.user_languages.get(user_id, "id")
-        lang_instruction = PromptBuilder.create_language_instruction(chosen_lang)
+        if language:
+            BOT.user_languages[user_id] = language
+            
+        saved_lang = BOT.user_languages.get(user_id)
+        lang_instruction = PromptBuilder.create_language_instruction(saved_lang, prompt)
 
         type_instruction = ""
         if command_type == "hadith":
@@ -270,9 +273,13 @@ async def process_slash_query(
         await interaction.followup.send(f"⚠️ An error occurred: {e}")
 
 
+# =========================================================
+# COMMANDS
+# =========================================================
+
 @BOT.tree.command(name="help", description="Guide & command list")
 async def slash_help(interaction: discord.Interaction, language: Optional[str] = None):
-    guide_text = "📖 **Islamic.AI — Command Guide**\nUse `/quran`, `/ask`, `/fiqh`, `/hadith`, `/tafsir`, `/dua`, `/dalil`, `/search`, `/ping`."
+    guide_text = "📖 **Islamic.AI — Command Guide**\nUse `/quran`, `/ask`, `/fiqh`, `/hadith`, `/tafsir`, `/dua`, `/asmaulhusna`, `/prophet`, `/prayertimes`, `/dalil`, `/search`, `/ping`."
     if language:
         BOT.user_languages[interaction.user.id] = language
     await interaction.response.send_message(guide_text)
@@ -287,6 +294,8 @@ async def slash_quran(interaction: discord.Interaction, surah: int, verse: int, 
 @BOT.tree.command(name="ask", description="Ask anything about Islam")
 async def slash_ask(interaction: discord.Interaction, prompt: str, language: Optional[str] = None):
     await interaction.response.defer()
+    if language:
+        BOT.user_languages[interaction.user.id] = language
     await process_slash_query(interaction, prompt, language, CONFIG.MODEL_HEAVY, command_type="ask")
 
 @BOT.tree.command(name="tafsir", description="Detailed Qur'anic exegesis (with auto-fallback)")
@@ -307,7 +316,6 @@ async def slash_tafsir(
     
     if language:
         BOT.user_languages[interaction.user.id] = language
-    chosen_lang = language or BOT.user_languages.get(interaction.user.id, "id")
 
     primary_file = source.value if source else "data/en-tafisr-ibn-kathir.json"
     primary_name = source.name if source else "Tafsir Ibn Kathir"
@@ -333,15 +341,15 @@ async def slash_tafsir(
             f"Provide comprehensive Tafsir for verse '{verse_key}'.\n"
             f"{fallback_note}\n"
             f"TAFSIR REFERENCE DATA ({used_source}):\n{tafsir_text}\n\n"
-            f"Please explain and structure this commentary clearly and translate EVERYTHING to {chosen_lang.upper()}."
+            f"Please explain and structure this commentary clearly."
         )
     else:
         query = (
             f"User asked for Tafsir for verse '{verse_key}' using {primary_name}. "
-            f"However, the specific JSON entry is missing in the local database. Please explain this honestly to the user in {chosen_lang.upper()}."
+            f"However, the specific JSON entry is missing in the local database. Please explain this honestly to the user."
         )
     
-    await process_slash_query(interaction, query, chosen_lang, CONFIG.MODEL_HEAVY, command_type="tafsir")
+    await process_slash_query(interaction, query, language, CONFIG.MODEL_HEAVY, command_type="tafsir")
 
 @BOT.tree.command(name="fiqh", description="Ask Fiqh rulings with Madhhab selection")
 @app_commands.choices(
@@ -358,11 +366,14 @@ async def slash_tafsir(
 )
 async def slash_fiqh(interaction: discord.Interaction, question: str, madhhab: Optional[app_commands.Choice[str]] = None, language: Optional[str] = None):
     await interaction.response.defer()
+    if language:
+        BOT.user_languages[interaction.user.id] = language
+        
     chosen_madhhab = madhhab.value if madhhab else "comparative_all"
     query = f"Fiqh Question: '{question}'. Requested Perspective: {chosen_madhhab.upper()}."
     await process_slash_query(interaction, query, language, CONFIG.MODEL_HEAVY, command_type="fiqh")
 
-@BOT.tree.command(name="hadith", description="Cari hadits terverifikasi berdasarkan topik & kitab pilihan.")
+@BOT.tree.command(name="hadith", description="Search verified Hadiths based on topics and books.")
 @app_commands.choices(book=[
     app_commands.Choice(name="Sahih al-Bukhari", value="sahih-bukhari"),
     app_commands.Choice(name="Sahih Muslim", value="sahih-muslim"),
@@ -385,72 +396,107 @@ async def slash_hadith(
         BOT.user_languages[interaction.user.id] = language
         
     book_value = book.value if book else None
-    book_display_name = book.name if book else "Semua Kitab Utama"
-    chosen_lang = language or BOT.user_languages.get(interaction.user.id, "id")
+    book_display_name = book.name if book else "All Major Books"
     
     raw_hadith_data = ""
     try:
         if BOT.hadith_client:
             raw_hadith_data = await BOT.hadith_client.search_hadiths(
                 topic=topic, 
-                book=book_value, 
-                language=chosen_lang
+                book=book_value
             )
     except Exception as e:
-        LOGGER.error(f"Gagal mengambil data dari hadith_client: {e}")
-        raw_hadith_data = "Gagal mengambil data langsung dari HadithAPI. Menggunakan pengetahuan model."
+        LOGGER.error(f"Failed to fetch data from hadith_client: {e}")
+        raw_hadith_data = "Failed to fetch from API. Please rely on standard knowledge."
 
     query = (
-        f"User mencari Hadits tentang topik: '{topic}' dalam kitab: '{book_display_name}'.\n\n"
-        f"DATA MENTAH DARI HADITHAPI:\n{raw_hadith_data}\n\n"
-        f"TUGAS:\n"
-        f"1. Tampilkan teks Matan Hadits dalam bahasa Arab secara utuh dan original.\n"
-        f"2. Terjemahkan nomor hadits, nama bab/heading, perawi, serta arti hadits tersebut SEPENUHNYA ke dalam bahasa **{chosen_lang.upper()}**.\n"
-        f"3. JANGAN mengarang/halusinasi nomor hadits."
+        f"User is looking for a Hadith about: '{topic}' in book: '{book_display_name}'.\n\n"
+        f"HADITHAPI RAW DATA:\n{raw_hadith_data}\n\n"
+        f"TASK:\n"
+        f"1. Show the original Arabic text.\n"
+        f"2. Translate the Hadith, narrator, and meaning matching the user's language.\n"
+        f"3. Do NOT hallucinate hadith numbers or text not present in the data."
     )
     
-    await process_slash_query(interaction, query, chosen_lang, CONFIG.MODEL_LIGHT, command_type="hadith")
+    await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT, command_type="hadith")
 
 # =========================================================
-# LOGIKA COMMAND DUA BARU MENGGUNAKAN API (dua_client.py)
+# UNIVERSAL ISLAMIC API COMMANDS (islamic_client.py)
 # =========================================================
-@BOT.tree.command(name="dua", description="Cari doa sahih terverifikasi dari Qur'an & Sunnah via API")
+
+@BOT.tree.command(name="dua", description="Search for authentic Duas from Quran & Sunnah")
 async def slash_dua(interaction: discord.Interaction, topic: str, language: Optional[str] = None):
     await interaction.response.defer()
-    
     if language:
         BOT.user_languages[interaction.user.id] = language
-    chosen_lang = language or BOT.user_languages.get(interaction.user.id, "id")
     
-    raw_dua_data = ""
-    try:
-        if BOT.dua_client:
-            raw_dua_data = await BOT.dua_client.search_dua(topic=topic, language=chosen_lang)
-    except Exception as e:
-        LOGGER.error(f"Gagal mengambil data dari dua_client: {e}")
-        raw_dua_data = "[API GAGAL: Jangan mengarang teks Arab atau sumber.]"
+    raw_data = await BOT.islamic_client.get_dua(topic) if BOT.islamic_client else ""
 
     query = (
-        f"User mencari Doa otentik tentang topik: '{topic}'.\n\n"
-        f"DATA MENTAH DARI ISLAMICAPI:\n{raw_dua_data}\n\n"
-        f"TUGAS & ATURAN:\n"
-        f"1. Tampilkan teks Doa dalam bahasa Arab secara utuh HANYA BERSUMBER dari data di atas.\n"
-        f"2. Terjemahkan arti serta sumber rujukannya ke dalam bahasa **{chosen_lang.upper()}**.\n"
-        f"3. JANGAN mengarang (halusinasi) teks Arab, sumber kitab, pengarang, atau URL palsu.\n"
-        f"4. Jika data dari API tertulis tidak ditemukan, berikan respon jujur bahwa doa tersebut tidak ada di database."
+        f"User is searching for a Dua about: '{topic}'.\n\nISLAMICAPI DATA:\n{raw_data}\n\n"
+        f"TASK: Show the Arabic text from the data above, then translate the meaning and reference naturally matching the user's input language without hallucinating."
     )
+    await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT, command_type="dua")
+
+@BOT.tree.command(name="asmaulhusna", description="Learn the 99 Names of Allah (Asmaul Husna)")
+async def slash_asmaulhusna(interaction: discord.Interaction, name: str, language: Optional[str] = None):
+    await interaction.response.defer()
+    if language:
+        BOT.user_languages[interaction.user.id] = language
     
-    await process_slash_query(interaction, query, chosen_lang, CONFIG.MODEL_LIGHT, command_type="dua")
+    raw_data = await BOT.islamic_client.get_asmaul_husna(name) if BOT.islamic_client else ""
+    
+    query = (
+        f"Explain the Asmaul Husna: '{name}'.\n\nISLAMICAPI DATA:\n{raw_data}\n\n"
+        f"TASK: Based on the data, explain the profound meaning and how to apply this attribute in daily life. Match the user's input language."
+    )
+    await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT, command_type="general")
+
+@BOT.tree.command(name="prophet", description="Read the stories and miracles of the Prophets")
+async def slash_prophet(interaction: discord.Interaction, prophet_name: str, language: Optional[str] = None):
+    await interaction.response.defer()
+    if language:
+        BOT.user_languages[interaction.user.id] = language
+    
+    raw_data = await BOT.islamic_client.get_prophet_story(prophet_name) if BOT.islamic_client else ""
+    
+    query = (
+        f"Tell the story of Prophet '{prophet_name}'.\n\nISLAMICAPI DATA:\n{raw_data}\n\n"
+        f"TASK: Summarize the story, mention his miracles, and list the wisdom/lessons we can learn. Match the user's input language."
+    )
+    await process_slash_query(interaction, query, language, CONFIG.MODEL_HEAVY, command_type="general")
+
+@BOT.tree.command(name="prayertimes", description="Check accurate prayer times for your city")
+async def slash_prayertimes(interaction: discord.Interaction, city: str, language: Optional[str] = None):
+    await interaction.response.defer()
+    if language:
+        BOT.user_languages[interaction.user.id] = language
+    
+    raw_data = await BOT.islamic_client.get_prayer_times(city) if BOT.islamic_client else ""
+    
+    query = (
+        f"Show prayer times for city '{city}'.\n\nISLAMICAPI DATA:\n{raw_data}\n\n"
+        f"TASK: Present the prayer times (Fajr, Dhuhr, Asr, Maghrib, Isha) neatly using bullet points matching the user's input language."
+    )
+    await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT, command_type="general")
+
+# =========================================================
 
 @BOT.tree.command(name="dalil", description="Find evidence from Qur'an & Sunnah")
 async def slash_dalil(interaction: discord.Interaction, topic: str, language: Optional[str] = None):
     await interaction.response.defer()
+    if language:
+        BOT.user_languages[interaction.user.id] = language
+    
     query = f"Provide authentic Dalil for topic: '{topic}'."
     await process_slash_query(interaction, query, language, CONFIG.MODEL_HEAVY, command_type="dalil")
 
 @BOT.tree.command(name="search", description="Search web references")
 async def slash_search(interaction: discord.Interaction, query: str, language: Optional[str] = None):
     await interaction.response.defer()
+    if language:
+        BOT.user_languages[interaction.user.id] = language
+        
     await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT, command_type="search")
 
 @BOT.tree.command(name="ping", description="Check bot latency")
@@ -474,8 +520,7 @@ async def start_web_server():
         await site.start()
         LOGGER.info(f"Keep-alive web server bound to port {CONFIG.PORT}")
     except OSError as e:
-        # Jika port error (Address already in use), jangan matikan bot
-        LOGGER.warning(f"⚠️ Port {CONFIG.PORT} sedang dipakai. Web server dilewati, Bot jalan terus! {e}")
+        LOGGER.warning(f"⚠️ Port {CONFIG.PORT} is already in use. Skipping web server! {e}")
 
 async def main():
     if not CONFIG.DISCORD_TOKEN:
