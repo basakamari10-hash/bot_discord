@@ -27,13 +27,13 @@ class IslamicBot(commands.Bot):
         
         self.session: Optional[aiohttp.ClientSession] = None
         self.groq_client: Optional[GroqClient] = None
-        self.hadith_client: Optional[HadithClient] = None  # Inisialisasi properti untuk client hadis
+        self.hadith_client: Optional[HadithClient] = None
         self.user_languages: Dict[int, str] = {}
 
     async def setup_hook(self):
         self.session = aiohttp.ClientSession()
         self.groq_client = GroqClient(self.session)
-        self.hadith_client = HadithClient(self.session)  # Instansiasi HadithClient
+        self.hadith_client = HadithClient(self.session)
         QURAN_DB.load_data()
         
         try:
@@ -283,11 +283,35 @@ async def slash_ask(interaction: discord.Interaction, prompt: str, language: Opt
     await interaction.response.defer()
     await process_slash_query(interaction, prompt, language, CONFIG.MODEL_HEAVY, command_type="ask")
 
+# =======================================================
+# UPDATED /TAFSIR COMMAND (WITH CHOICES)
+# =======================================================
 @BOT.tree.command(name="tafsir", description="Detailed Qur'anic exegesis")
-async def slash_tafsir(interaction: discord.Interaction, verse: str, source: Optional[str] = None, language: Optional[str] = None):
+@app_commands.choices(
+    source=[
+        app_commands.Choice(name="Tafsir Ibn Kathir", value="en-tafisr-ibn-kathir.json"),
+        app_commands.Choice(name="Tafsir Ma'ariful Qur'an", value="en-tafsir-maarif-ul-quran.json"),
+        app_commands.Choice(name="Tafsir Al-Jalalayn", value="tafsir-al-jalalayn.json")
+    ]
+)
+async def slash_tafsir(
+    interaction: discord.Interaction, 
+    verse: str, 
+    source: Optional[app_commands.Choice[str]] = None, 
+    language: Optional[str] = None
+):
     await interaction.response.defer()
-    primary_source = source if source else "Tafsir Ibn Kathir / Tafsir al-Jalalayn"
-    query = f"Provide comprehensive Tafsir for verse '{verse}' using {primary_source}."
+    
+    # Menentukan nilai default jika pengguna tidak memilih sumber
+    chosen_file = source.value if source else "en-tafisr-ibn-kathir.json"
+    chosen_name = source.name if source else "Tafsir Ibn Kathir"
+    
+    # Menggabungkan nama tafsir dan nama file JSON ke dalam prompt query
+    query = (
+        f"Provide comprehensive Tafsir for verse '{verse}' using {chosen_name}. "
+        f"[IMPORTANT: Extract and base your explanation entirely on the data from the '{chosen_file}' database file]."
+    )
+    
     await process_slash_query(interaction, query, language, CONFIG.MODEL_HEAVY, command_type="tafsir")
 
 @BOT.tree.command(name="fiqh", description="Ask Fiqh rulings with Madhhab selection")
@@ -310,7 +334,7 @@ async def slash_fiqh(interaction: discord.Interaction, question: str, madhhab: O
     await process_slash_query(interaction, query, language, CONFIG.MODEL_HEAVY, command_type="fiqh")
 
 # =======================================================
-# UPDATED /HADITH COMMAND 
+# UPDATED /HADITH COMMAND (API INTEGRATION)
 # =======================================================
 @BOT.tree.command(name="hadith", description="Search authentic Hadiths via HadithAPI")
 async def slash_hadith(
