@@ -1,188 +1,365 @@
-import sys
+import time
 import asyncio
+from typing import Any, Optional
+
+import aiohttp
+from aiohttp import web
 import discord
 from discord import app_commands
-from discord.ext import commands
-import aiohttp
+from discord.ext import commands, tasks
 
-# Import modul internal
 from config import CONFIG
 from logger import LOGGER
 from limiter import GLOBAL_RATE_LIMITER
-from cache import GLOBAL_CACHE
-from prompt_builder import PromptBuilder
+from database import QURAN_DB, SURAH_OFFICIAL_NAMES
 from search import SmartSearch
-from hadith_client import HadithAPIClient
 from groq_client import GroqClient
-
-# Setup Bot Discord
-intents = discord.Intents.default()
-intents.message_content = True
+from prompt_builder import PromptBuilder
 
 class IslamicBot(commands.Bot):
     def __init__(self):
+        intents = discord.Intents.default()
+        intents.message_content = True
         super().__init__(command_prefix="!", intents=intents)
-        self.session: aiohttp.ClientSession = None
-        self.search_engine: SmartSearch = None
-        self.hadith_api: HadithAPIClient = None
-        self.groq_client: GroqClient = None
+        
+        self.session: Optional[aiohttp.ClientSession] = None
+        self.groq_client: Optional[GroqClient] = None
+        self.user_languages: Dict[int, str] = {}
 
     async def setup_hook(self):
-        # Inisialisasi HTTP Session global untuk performa async yang stabil
         self.session = aiohttp.ClientSession()
-        self.search_engine = SmartSearch()
-        self.hadith_api = HadithAPIClient(self.session)
         self.groq_client = GroqClient(self.session)
+        QURAN_DB.load_data()
         
-        LOGGER.info("Menyinkronkan Slash Commands ke Discord...")
-        await self.tree.sync()
+        try:
+            synced = await self.tree.sync()
+            LOGGER.info(f"Synced {len(synced)} Slash Commands for Islamic.AI Bot!")
+        except Exception as e:
+            LOGGER.error(f"Failed to sync slash commands: {e}")
+
+        if not self.keep_alive_ping.is_running():
+            self.keep_alive_ping.start()
 
     async def close(self):
-        # Cleanup session saat bot mati
-        if self.session and not self.session.closed:
+        if self.session:
             await self.session.close()
         await super().close()
 
-bot = IslamicBot()
+    @tasks.loop(hours=3)
+    async def keep_alive_ping(self):
+        if CONFIG.STREAMLIT_URL and "streamlit.app" in CONFIG.STREAMLIT_URL and self.session:
+            try:
+                async with self.session.get(CONFIG.STREAMLIT_URL, timeout=15) as resp:
+                    LOGGER.info(f"[Keep-Alive] Ping status: {resp.status}")
+            except Exception as e:
+                LOGGER.warning(f"[Keep-Alive] Failed: {e}")
 
-# ---------------------------------------------------------
-# Helper: Pemotong Pesan (Discord Limit 2000 Karakter)
-# ---------------------------------------------------------
-async def send_split_message(interaction: discord.Interaction, text: str):
-    """Memotong teks jika melebihi batas 2000 karakter Discord."""
-    if len(text) <= 2000:
-        await interaction.followup.send(text)
+    @keep_alive_ping.before_loop
+    async def before_keep_alive(self):
+        await self.wait_until_ready()
+
+BOT = IslamicBot()
+
+@BOT.event
+async def on_ready():
+    LOGGER.info(f"Islamic.AI Bot ({BOT.user}) is Online!")
+    await BOT.change_presence(activity=discord.Game(name="/help | /quran | /fiqh | /tafsir"))
+
+@BOT.event
+async def on_message(message: discord.Message):
+    if message.author.bot:
         return
 
-    # Potong berdasarkan paragraf atau baris
+    content = message.content.strip()
+    parsed_verse = QURAN_DB.parse_verse_key(content)
+    if parsed_verse and len(content.split()) <= 5:
+        surah_num, start_a, end_a = parsed_verse
+        await send_quran_embed(message.channel, surah_num, start_a, end_a, reply_msg=message)
+        return
+
+    is_mentioned = BOT.user in message.mentions
+    is_reply_to_bot = False
+    
+    if message.reference and message.reference.message_id:
+        try:
+            ref_msg = await message.channel.fetch_message(message.reference.message_id)
+            if ref_msg and ref_msg.author == BOT.user:
+                is_reply_to_bot = True
+        except Exception as e:
+            LOGGER.warning(f"Failed to fetch reference message: {e}")
+
+    if is_reply_to_bot or is_mentioned:
+        async with message.channel.typing():
+            clean_prompt = content.replace(f"<@{BOT.user.id}>", "").replace(f"<@!{BOT.user.id}>", "").strip()
+            if not clean_prompt:
+                clean_prompt = "Assalamu'alaikum, is there anything you can help me with?"
+
+            raw_history = []
+            async for msg in message.channel.history(limit=8):
+                h_text = msg.content.replace(f"<@{BOT.user.id}>", "").replace(f"<@!{BOT.user.id}>", "").strip()
+                if not h_text:
+                    continue
+                if msg.author == BOT.user:
+                    raw_history.append(f"Assistant: {h_text}")
+                elif not msg.author.bot:
+                    sender_name = msg.author.display_name
+                    raw_history.append(f"User [{sender_name}]: {h_text}")
+
+            raw_history.reverse()
+            
+            web_ref = await SmartSearch.execute_search(BOT.session, clean_prompt)
+            quran_ctx = PromptBuilder.extract_quran_context(clean_prompt)
+            
+            user_lang = BOT.user_languages.get(message.author.id)
+            lang_instruction = PromptBuilder.create_language_instruction(user_lang)
+
+            prompt = (
+                f"{lang_instruction}\n\n"
+                f"USER PROMPT: {clean_prompt}\n\n"
+                f"VERIFIED WEB REFERENCES:\n{web_ref}\n\n"
+                f"{quran_ctx}\n"
+                f"CHAT HISTORY:\n" + "\n".join(raw_history) + "\n\n"
+                f"[MANDATORY REQUIREMENT: Your answer MUST contain: (1) Relevant Arabic Dalil text + translation grounded in the provided JSON, and (2) Explicit book/scholarly source citations.]\n\n"
+                f"REMINDER AGAIN:\n{lang_instruction}"
+            )
+
+            jawaban = await BOT.groq_client.chat_completion(
+                prompt_text=prompt,
+                system_prompt=PromptBuilder.SYSTEM_PROMPT,
+                preferred_model=CONFIG.MODEL_HEAVY
+            )
+            await send_long_message(message, jawaban, mode="reply")
+            return
+
+    await BOT.process_commands(message)
+
+async def send_long_message(target: Any, text: str, mode: str = "reply"):
+    if not text:
+        return
+    limit = 1900
     chunks = []
-    while len(text) > 2000:
-        split_pos = text.rfind("\n", 0, 1900)
-        if split_pos == -1:
-            split_pos = 1900
-        chunks.append(text[:split_pos])
-        text = text[split_pos:].lstrip()
-    chunks.append(text)
+    paragraphs = text.split('\n\n')
+    current_chunk = ""
+
+    for p in paragraphs:
+        if len(current_chunk) + len(p) + 2 > limit:
+            if current_chunk:
+                chunks.append(current_chunk.strip())
+                current_chunk = ""
+            if len(p) > limit:
+                lines = p.split('\n')
+                for line in lines:
+                    if len(current_chunk) + len(line) + 1 > limit:
+                        chunks.append(current_chunk.strip())
+                        current_chunk = line + "\n"
+                    else:
+                        current_chunk += line + "\n"
+            else:
+                current_chunk = p + "\n\n"
+        else:
+            current_chunk += p + "\n\n"
+            
+    if current_chunk:
+        chunks.append(current_chunk.strip())
 
     for i, chunk in enumerate(chunks):
-        if i == 0:
-            await interaction.followup.send(chunk)
+        if not chunk: continue
+        if mode == "reply":
+            if i == 0 and hasattr(target, "reply"):
+                await target.reply(chunk)
+            else:
+                channel = getattr(target, "channel", target)
+                await channel.send(chunk)
+        elif mode == "slash":
+            if hasattr(target, "followup"):
+                await target.followup.send(chunk)
+            elif hasattr(target, "send_message"):
+                await target.send_message(chunk)
+
+async def send_quran_embed(destination: Any, surah_num: int, start_ayah: int, end_ayah: Optional[int] = None, reply_msg: Optional[discord.Message] = None):
+    end_v = end_ayah if end_ayah else start_ayah
+    verses = QURAN_DB.get_range(surah_num, start_ayah, end_v)
+
+    if not verses:
+        msg = f"❌ Verse QS {surah_num}:{start_ayah} not found!"
+        if reply_msg:
+            await reply_msg.reply(msg)
+        elif hasattr(destination, "followup"):
+            await destination.followup.send(msg)
         else:
-            await interaction.channel.send(chunk)
+            await destination.send(msg)
+        return
 
-# ---------------------------------------------------------
-# Discord Events
-# ---------------------------------------------------------
-@bot.event
-async def on_ready():
-    LOGGER.info(f"✅ Bot Berhasil Online! Logged in as: {bot.user} (ID: {bot.user.id})")
-    await bot.change_presence(
-        activity=discord.Game(name="/ask | /hadith | /quran — Islamic AI Assistant")
-    )
-
-# ---------------------------------------------------------
-# Slash Commands
-# ---------------------------------------------------------
-
-# 1. Command /ask (Pertanyaan Umum & Fiqh dengan RAG Web Search)
-@bot.tree.command(name="ask", description="Tanya seputar Al-Qur'an, Fiqh, Hadits, dan Studi Islam")
-@app_commands.describe(pertanyaan="Ketik pertanyaanmu di sini...")
-async def ask_command(interaction: discord.Interaction, pertanyaan: str):
-    user_id = interaction.user.id
+    surah_name = verses[0]["surah_name"]
+    title_ref = f"📖 QS. {surah_name} ({surah_num}:{start_ayah}" + (f"-{end_v})" if start_ayah != end_v else ")")
+    embed = discord.Embed(title=title_ref, color=discord.Color.gold())
     
-    # Check Rate Limit / Cooldown
-    is_limited, retry_after = await GLOBAL_RATE_LIMITER.is_rate_limited(user_id)
-    if is_limited:
-        await interaction.response.send_message(
-            f"⏳ Mohon tunggu {retry_after:.1f} detik sebelum menggunakan perintah lagi.",
-            ephemeral=True
-        )
-        return
+    arab_texts, trans_texts = [], []
+    for v in verses:
+        arab_texts.append(f"({v['ayah_num']}) {v['ar']}")
+        trans_texts.append(f"**[{v['ayah_num']}]** {v['tr']}")
 
-    await interaction.response.defer(thinking=True)
+    embed.add_field(name="Arabic Text (qpc-hafs.json)", value="\n".join(arab_texts)[:1024], inline=False)
+    embed.add_field(name="JSON Reference Translation", value="\n".join(trans_texts)[:1024], inline=False)
+    embed.set_footer(text="Source: Official Local JSON Database")
 
-    # 1. Cek Cache terlebih dahulu
-    cache_key = f"ask:{pertanyaan.strip().lower()}"
-    cached_reply = await GLOBAL_CACHE.get(cache_key)
-    if cached_reply:
-        await send_split_message(interaction, cached_reply)
-        return
+    if reply_msg:
+        await reply_msg.reply(embed=embed)
+    elif hasattr(destination, "followup"):
+        await destination.followup.send(embed=embed)
+    else:
+        await destination.send(embed=embed)
 
-    # 2. Cari konteks via RAG Web Search
-    search_context = await bot.search_engine.search_web(pertanyaan)
-
-    # 3. Rakit Prompt & panggil LLM
-    system_prompt = PromptBuilder.build_system_prompt()
-    user_prompt = PromptBuilder.build_user_prompt(
-        user_query=pertanyaan,
-        search_context=search_context
-    )
-
-    reply = await bot.groq_client.generate_response(
-        system_prompt=system_prompt,
-        user_prompt=user_prompt
-    )
-
-    # 4. Simpan ke Cache & Kirim Pesan
-    await GLOBAL_CACHE.set(cache_key, reply)
-    await send_split_message(interaction, reply)
-
-
-# 2. Command /hadith (Pencarian Spesifik via HadithAPI.com)
-@bot.tree.command(name="hadith", description="Cari Hadits Shahih berdasarkan kata kunci atau topik")
-@app_commands.describe(topik="Misal: niat, shalat, ramadhan, atau nomor hadits")
-async def hadith_command(interaction: discord.Interaction, topik: str):
+async def process_slash_query(
+    interaction: discord.Interaction,
+    prompt: str,
+    language: Optional[str] = None,
+    model_override: str = CONFIG.MODEL_LIGHT,
+    command_type: str = "general"
+):
     user_id = interaction.user.id
-
-    is_limited, retry_after = await GLOBAL_RATE_LIMITER.is_rate_limited(user_id)
+    is_limited, remaining = await GLOBAL_RATE_LIMITER.is_rate_limited(user_id)
     if is_limited:
-        await interaction.response.send_message(
-            f"⏳ Mohon tunggu {retry_after:.1f} detik.",
-            ephemeral=True
-        )
+        await interaction.followup.send(f"⏱️ Please slow down! Try again in {remaining:.1f} seconds.")
         return
-
-    await interaction.response.defer(thinking=True)
-
-    cache_key = f"hadith:{topik.strip().lower()}"
-    cached_reply = await GLOBAL_CACHE.get(cache_key)
-    if cached_reply:
-        await send_split_message(interaction, cached_reply)
-        return
-
-    # 1. Tarik data dari HadithAPI.com
-    hadith_context = await bot.hadith_api.search_hadith(query=topik)
-
-    # 2. Rakit Prompt dengan Konteks Hadits Terverifikasi
-    system_prompt = PromptBuilder.build_system_prompt()
-    user_prompt = PromptBuilder.build_user_prompt(
-        user_query=f"Jelaskan dan uraikan hadits mengenai topik: {topik}",
-        search_context=hadith_context
-    )
-
-    reply = await bot.groq_client.generate_response(
-        system_prompt=system_prompt,
-        user_prompt=user_prompt
-    )
-
-    await GLOBAL_CACHE.set(cache_key, reply)
-    await send_split_message(interaction, reply)
-
-# ---------------------------------------------------------
-# Main Execution Runner
-# ---------------------------------------------------------
-async def main():
-    token = CONFIG.DISCORD_TOKEN
-    if not token:
-        LOGGER.critical("❌ ERROR: DISCORD_TOKEN tidak ditemukan di Environment/Secrets!")
-        sys.exit(1)
 
     try:
-        await bot.start(token)
+        sender_name = interaction.user.display_name
+        web_ref = await SmartSearch.execute_search(BOT.session, prompt)
+        quran_ctx = PromptBuilder.extract_quran_context(prompt)
+        
+        chosen_lang = language or BOT.user_languages.get(user_id)
+        lang_instruction = PromptBuilder.create_language_instruction(chosen_lang)
+
+        type_instruction = ""
+        if command_type == "hadith":
+            type_instruction = "\n\n[STRICT COMMAND MANDATE: HADITH SPECIFIC (/hadith)]\nFocus 100% on Authentic Hadiths across Kutubus Sittah."
+        elif command_type == "tafsir":
+            type_instruction = "\n\n[STRICT COMMAND MANDATE: TAFSIR SPECIFIC (/tafsir)]\nFocus strictly on Qur'anic exegesis and commentary."
+        elif command_type == "fiqh":
+            type_instruction = "\n\n[STRICT COMMAND MANDATE: FIQH SPECIFIC (/fiqh)]\nCRITICAL MADHHAB FOCUS: Dedicate 95% of your answer ONLY to the selected perspective without unnecessary tables."
+
+        final_prompt = (
+            f"{lang_instruction}\n\n"
+            f"USER PROMPT [{sender_name}]: {prompt}\n\n"
+            f"VERIFIED SEARCH REFERENCES:\n{web_ref}\n\n"
+            f"{quran_ctx}\n"
+            f"[MANDATORY REQUIREMENT: Include Arabic Dalil text + book citation.]{type_instruction}\n\n"
+            f"REMINDER AGAIN:\n{lang_instruction}"
+        )
+
+        jawaban = await BOT.groq_client.chat_completion(
+            prompt_text=final_prompt,
+            system_prompt=PromptBuilder.SYSTEM_PROMPT,
+            preferred_model=model_override
+        )
+        await send_long_message(interaction, jawaban, mode="slash")
+    except Exception as e:
+        LOGGER.error(f"Error processing query '{prompt}': {e}")
+        await interaction.followup.send(f"⚠️ An error occurred: {e}")
+
+@BOT.tree.command(name="help", description="Guide & command list")
+async def slash_help(interaction: discord.Interaction, language: Optional[str] = None):
+    guide_text = "📖 **Islamic.AI — Command Guide**\nUse `/quran`, `/ask`, `/fiqh`, `/hadith`, `/tafsir`, `/dua`, `/dalil`, `/search`, `/test`."
+    if language:
+        BOT.user_languages[interaction.user.id] = language
+    await interaction.response.send_message(guide_text)
+
+@BOT.tree.command(name="quran", description="Get exact Qur'an Arabic text and translation")
+async def slash_quran(interaction: discord.Interaction, surah: int, verse: int, verse_to: Optional[int] = None, language: Optional[str] = None):
+    await interaction.response.defer()
+    if language:
+        BOT.user_languages[interaction.user.id] = language
+    await send_quran_embed(interaction, surah, verse, verse_to)
+
+@BOT.tree.command(name="ask", description="Ask anything about Islam")
+async def slash_ask(interaction: discord.Interaction, prompt: str, language: Optional[str] = None):
+    await interaction.response.defer()
+    await process_slash_query(interaction, prompt, language, CONFIG.MODEL_HEAVY, command_type="ask")
+
+@BOT.tree.command(name="tafsir", description="Detailed Qur'anic exegesis")
+async def slash_tafsir(interaction: discord.Interaction, verse: str, source: Optional[str] = None, language: Optional[str] = None):
+    await interaction.response.defer()
+    primary_source = source if source else "Tafsir Ibn Kathir / Tafsir al-Jalalayn"
+    query = f"Provide comprehensive Tafsir for verse '{verse}' using {primary_source}."
+    await process_slash_query(interaction, query, language, CONFIG.MODEL_HEAVY, command_type="tafsir")
+
+@BOT.tree.command(name="fiqh", description="Ask Fiqh rulings with Madhhab selection")
+@app_commands.choices(
+    madhhab=[
+        app_commands.Choice(name="Shafi'i", value="shafii"),
+        app_commands.Choice(name="Hanafi", value="hanafi"),
+        app_commands.Choice(name="Maliki", value="maliki"),
+        app_commands.Choice(name="Hanbali", value="hanbali"),
+        app_commands.Choice(name="Ja'fari / Shia Twelver", value="jaafari_shia"),
+        app_commands.Choice(name="Zaidi / Shia Zaidiyyah", value="zaidi_shia"),
+        app_commands.Choice(name="Progressive / Reformist Muslim Thought", value="progressive_muslims"),
+        app_commands.Choice(name="Comparative", value="comparative_all")
+    ]
+)
+async def slash_fiqh(interaction: discord.Interaction, question: str, madhhab: Optional[app_commands.Choice[str]] = None, language: Optional[str] = None):
+    await interaction.response.defer()
+    chosen_madhhab = madhhab.value if madhhab else "comparative_all"
+    query = f"Fiqh Question: '{question}'. Requested Perspective: {chosen_madhhab.upper()}."
+    await process_slash_query(interaction, query, language, CONFIG.MODEL_HEAVY, command_type="fiqh")
+
+@BOT.tree.command(name="hadith", description="Search authentic Hadiths")
+async def slash_hadith(interaction: discord.Interaction, topic: str, book: Optional[str] = None, language: Optional[str] = None):
+    await interaction.response.defer()
+    requested_book = book if book else "Kutubus Sittah"
+    query = f"Hadith matan regarding '{topic}' in {requested_book}."
+    await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT, command_type="hadith")
+
+@BOT.tree.command(name="dua", description="Search authentic Duas")
+async def slash_dua(interaction: discord.Interaction, topic: str, language: Optional[str] = None):
+    await interaction.response.defer()
+    query = f"Provide authentic Duas for: '{topic}'."
+    await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT, command_type="dua")
+
+@BOT.tree.command(name="dalil", description="Find evidence from Qur'an & Sunnah")
+async def slash_dalil(interaction: discord.Interaction, topic: str, language: Optional[str] = None):
+    await interaction.response.defer()
+    query = f"Provide authentic Dalil for topic: '{topic}'."
+    await process_slash_query(interaction, query, language, CONFIG.MODEL_HEAVY, command_type="dalil")
+
+@BOT.tree.command(name="search", description="Search web references")
+async def slash_search(interaction: discord.Interaction, query: str, language: Optional[str] = None):
+    await interaction.response.defer()
+    await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT, command_type="search")
+
+@BOT.tree.command(name="ping", description="Check bot latency")
+async def slash_ping(interaction: discord.Interaction):
+    latency = round(BOT.latency * 1000)
+    await interaction.response.send_message(f"🏓 Pong! Latency: `{latency}ms`")
+
+async def start_web_server():
+    async def handle_ping(request):
+        return web.Response(text="Bot is alive!", status=200)
+
+    app = web.Application()
+    app.router.add_get("/", handle_ping)
+    app.router.add_get("/health", handle_ping)
+    
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", CONFIG.PORT)
+    await site.start()
+    LOGGER.info(f"Keep-alive web server bound to port {CONFIG.PORT}")
+
+async def main():
+    if not CONFIG.DISCORD_TOKEN:
+        LOGGER.critical("DISCORD_TOKEN missing! Exiting...")
+        return
+    await start_web_server()
+    try:
+        await BOT.start(CONFIG.DISCORD_TOKEN)
     except KeyboardInterrupt:
-        LOGGER.info("Bot dihentikan secara manual.")
+        LOGGER.info("Shutdown requested...")
     finally:
-        await bot.close()
+        await BOT.close()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        LOGGER.info("Terminated.")
