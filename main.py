@@ -279,7 +279,7 @@ async def process_slash_query(
 
 @BOT.tree.command(name="help", description="Guide & command list")
 async def slash_help(interaction: discord.Interaction, language: Optional[str] = None):
-    guide_text = "📖 **Islamic.AI — Command Guide**\nUse `/quran`, `/ask`, `/fiqh`, `/hadith`, `/tafsir`, `/dua`, `/asmaulhusna`, `/prophet`, `/prayertimes`, `/dalil`, `/search`, `/ping`."
+    guide_text = "📖 **Islamic.AI — Command Guide**\nUse `/quran`, `/ask`, `/fiqh`, `/hadith`, `/tafsir`, `/dua`, `/asmaulhusna`, `/prayertimes`, `/fasting`, `/zakat`, `/ruqyah`, `/dalil`, `/search`, `/ping`."
     if language:
         BOT.user_languages[interaction.user.id] = language
     await interaction.response.send_message(guide_text)
@@ -419,7 +419,7 @@ async def slash_hadith(
     await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT, command_type="hadith")
 
 # =========================================================
-# ISLAMICAPI.COM COMMANDS
+# OFFICIAL ISLAMICAPI.COM COMMANDS
 # =========================================================
 
 @BOT.tree.command(name="dua", description="Search for authentic Duas from Quran & Sunnah")
@@ -448,19 +448,6 @@ async def slash_asmaulhusna(interaction: discord.Interaction, name: str, languag
     )
     await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT, command_type="general")
 
-@BOT.tree.command(name="prophet", description="Read the stories and miracles of the Prophets")
-async def slash_prophet(interaction: discord.Interaction, prophet_name: str, language: Optional[str] = None):
-    await interaction.response.defer()
-    if language:
-        BOT.user_languages[interaction.user.id] = language
-    
-    raw_data = await BOT.islamic_client.get_prophet_story(prophet_name) if BOT.islamic_client else ""
-    query = (
-        f"Tell the story of Prophet '{prophet_name}'.\n\nISLAMICAPI DATA:\n{raw_data}\n\n"
-        f"TASK: Summarize the story, mention his miracles, and list the wisdom/lessons we can learn. Match the user's input language."
-    )
-    await process_slash_query(interaction, query, language, CONFIG.MODEL_HEAVY, command_type="general")
-
 @BOT.tree.command(name="prayertimes", description="Check accurate prayer times for your city")
 async def slash_prayertimes(interaction: discord.Interaction, city: str, language: Optional[str] = None):
     await interaction.response.defer()
@@ -470,7 +457,46 @@ async def slash_prayertimes(interaction: discord.Interaction, city: str, languag
     raw_data = await BOT.islamic_client.get_prayer_times(city) if BOT.islamic_client else ""
     query = (
         f"Show prayer times for city '{city}'.\n\nISLAMICAPI DATA:\n{raw_data}\n\n"
-        f"TASK: Present the prayer times (Fajr, Dhuhr, Asr, Maghrib, Isha) neatly using bullet points matching the user's input language."
+        f"TASK: Present the prayer times neatly using bullet points matching the user's input language."
+    )
+    await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT, command_type="general")
+
+@BOT.tree.command(name="fasting", description="Check fasting times (Suhoor/Iftar) for your city")
+async def slash_fasting(interaction: discord.Interaction, city: str, language: Optional[str] = None):
+    await interaction.response.defer()
+    if language:
+        BOT.user_languages[interaction.user.id] = language
+    
+    raw_data = await BOT.islamic_client.get_fasting_time(city) if BOT.islamic_client else ""
+    query = (
+        f"Show fasting times (Suhoor and Iftar) for city '{city}'.\n\nISLAMICAPI DATA:\n{raw_data}\n\n"
+        f"TASK: Present the Suhoor and Iftar timings neatly matching the user's input language."
+    )
+    await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT, command_type="general")
+
+@BOT.tree.command(name="zakat", description="Calculate Zakat Nisab and threshold rules")
+async def slash_zakat(interaction: discord.Interaction, asset_value: str, language: Optional[str] = None):
+    await interaction.response.defer()
+    if language:
+        BOT.user_languages[interaction.user.id] = language
+    
+    raw_data = await BOT.islamic_client.get_zakat_nisab(asset_value) if BOT.islamic_client else ""
+    query = (
+        f"Calculate Zakat Nisab for asset value/amount: '{asset_value}'.\n\nISLAMICAPI DATA:\n{raw_data}\n\n"
+        f"TASK: Provide clear Zakat computation guidelines, nisab thresholds, and whether it meets the obligation based on the data. Match the user's input language."
+    )
+    await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT, command_type="general")
+
+@BOT.tree.command(name="ruqyah", description="Find authentic Ruqyah verses and duas for healing")
+async def slash_ruqyah(interaction: discord.Interaction, ailment: str, language: Optional[str] = None):
+    await interaction.response.defer()
+    if language:
+        BOT.user_languages[interaction.user.id] = language
+    
+    raw_data = await BOT.islamic_client.get_ruqyah(ailment) if BOT.islamic_client else ""
+    query = (
+        f"Find Ruqyah guidance/verses for ailment or protection: '{ailment}'.\n\nISLAMICAPI DATA:\n{raw_data}\n\n"
+        f"TASK: Show the authentic Quranic verses or Sunnah duas used for Ruqyah from the data, along with their translations, matching the user's input language."
     )
     await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT, command_type="general")
 
