@@ -17,6 +17,7 @@ class Config:
     DISCORD_TOKEN: str = field(default_factory=lambda: _get_secret("DISCORD_TOKEN"))
     GROQ_API_KEY: str = field(default_factory=lambda: _get_secret("GROQ_API_KEY"))
     STREAMLIT_URL: str = field(default_factory=lambda: _get_secret("STREAMLIT_URL", "https://your-app-name.streamlit.app"))
+    HADITH_API_KEY: str = field(default_factory=lambda: _get_secret("HADITH_API_KEY"))
     PORT: int = field(default_factory=lambda: int(os.getenv("PORT", "8080")))
     
     MODEL_HEAVY: str = "openai/gpt-oss-120b"
