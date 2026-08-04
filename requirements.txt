@@ -2,3 +2,4 @@ streamlit
 discord.py
 requests
 ddgs
+aiohttp
