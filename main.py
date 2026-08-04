@@ -16,8 +16,9 @@ from search import SmartSearch
 from groq_client import GroqClient
 from prompt_builder import PromptBuilder
 
-# Import HadithClient dari hadith_client.py
+# Import helper dan clients
 from hadith_client import HadithClient
+from helper import get_tafsir_with_fallback
 
 class IslamicBot(commands.Bot):
     def __init__(self):
@@ -68,7 +69,7 @@ BOT = IslamicBot()
 @BOT.event
 async def on_ready():
     LOGGER.info(f"Islamic.AI Bot ({BOT.user}) is Online!")
-    await BOT.change_presence(activity=discord.Game(name="/help | /quran | /fiqh | /tafsir | /hadith"))
+    await BOT.change_presence(activity=discord.Game(name="/help | /quran | /tafsir | /hadith"))
 
 @BOT.event
 async def on_message(message: discord.Message):
@@ -283,11 +284,15 @@ async def slash_ask(interaction: discord.Interaction, prompt: str, language: Opt
     await interaction.response.defer()
     await process_slash_query(interaction, prompt, language, CONFIG.MODEL_HEAVY, command_type="ask")
 
-@BOT.tree.command(name="tafsir", description="Detailed Qur'anic exegesis")
+
+# =======================================================
+# /TAFSIR COMMAND DENGAN FALLBACK MECHANISM (helper.py)
+# =======================================================
+@BOT.tree.command(name="tafsir", description="Detailed Qur'anic exegesis (with auto-fallback)")
 @app_commands.choices(
     source=[
         app_commands.Choice(name="Tafsir Ibn Kathir", value="en-tafisr-ibn-kathir.json"),
-        app_commands.Choice(name="Tafsir Ma'ariful Qur'an", value="en-tafisr-maarif-ul-quran.json"),
+        app_commands.Choice(name="Tafsir Ma'ariful Qur'an", value="en-tafsir-maarif-ul-quran.json"),
         app_commands.Choice(name="Tafsir Al-Jalalayn", value="tafsir-al-jalalayn.json")
     ]
 )
@@ -299,15 +304,49 @@ async def slash_tafsir(
 ):
     await interaction.response.defer()
     
-    chosen_file = source.value if source else "en-tafisr-ibn-kathir.json"
-    chosen_name = source.name if source else "Tafsir Ibn Kathir"
+    if language:
+        BOT.user_languages[interaction.user.id] = language
+    chosen_lang = language or BOT.user_languages.get(interaction.user.id, "id")
+
+    # Tentukan sumber default jika user tidak milih
+    primary_file = source.value if source else "en-tafisr-ibn-kathir.json"
+    primary_name = source.name if source else "Tafsir Ibn Kathir"
     
-    query = (
-        f"Provide comprehensive Tafsir for verse '{verse}' using {chosen_name}. "
-        f"[IMPORTANT: Extract and base your explanation entirely on the data from the '{chosen_file}' database file]."
-    )
+    # Ekstrak verse kunci (contoh "1:4") dari input user
+    parsed_verse = QURAN_DB.parse_verse_key(verse)
+    if parsed_verse:
+        surah, start_a, _ = parsed_verse
+        verse_key = f"{surah}:{start_a}"
+    else:
+        verse_key = verse.strip()
+
+    # Panggil fungsi fallback dari helper.py
+    tafsir_text, used_source, is_fallback = get_tafsir_with_fallback(verse_key, primary_file)
     
-    await process_slash_query(interaction, query, language, CONFIG.MODEL_HEAVY, command_type="tafsir")
+    if tafsir_text:
+        fallback_note = ""
+        # Jika pakai kitab cadangan, beri notifikasi ke AI supaya transparan
+        if is_fallback:
+            fallback_note = (
+                f"\n[NOTE: The requested Tafsir '{primary_name}' does not have an entry for verse '{verse_key}'. "
+                f"I automatically fetched the reference from '{used_source}' as a fallback. Please inform the user gracefully].\n"
+            )
+
+        query = (
+            f"Provide comprehensive Tafsir for verse '{verse_key}'.\n"
+            f"{fallback_note}\n"
+            f"TAFSIR REFERENCE DATA ({used_source}):\n{tafsir_text}\n\n"
+            f"Please explain and structure this commentary clearly and translate EVERYTHING to {chosen_lang.upper()}."
+        )
+    else:
+        # Jika di SEMUA kitab kosong (sangat jarang terjadi)
+        query = (
+            f"User asked for Tafsir for verse '{verse_key}' using {primary_name}. "
+            f"However, the specific JSON entry is missing in the local database. Please explain this honestly to the user in {chosen_lang.upper()}."
+        )
+    
+    await process_slash_query(interaction, query, chosen_lang, CONFIG.MODEL_HEAVY, command_type="tafsir")
+
 
 @BOT.tree.command(name="fiqh", description="Ask Fiqh rulings with Madhhab selection")
 @app_commands.choices(
@@ -328,9 +367,6 @@ async def slash_fiqh(interaction: discord.Interaction, question: str, madhhab: O
     query = f"Fiqh Question: '{question}'. Requested Perspective: {chosen_madhhab.upper()}."
     await process_slash_query(interaction, query, language, CONFIG.MODEL_HEAVY, command_type="fiqh")
 
-# =======================================================
-# /HADITH COMMAND (API INTEGRATION + DROPDOWN CHOICES + MULTI-LANG)
-# =======================================================
 @BOT.tree.command(name="hadith", description="Cari hadits terverifikasi berdasarkan topik & kitab pilihan.")
 @app_commands.choices(book=[
     app_commands.Choice(name="Sahih al-Bukhari", value="sahih-bukhari"),
@@ -359,7 +395,6 @@ async def slash_hadith(
     
     chosen_lang = language or BOT.user_languages.get(interaction.user.id, "id")
     
-    # 1. Ambil data dari HadithAPI via HadithClient
     hadith_api_results = ""
     try:
         if BOT.hadith_client:
@@ -372,7 +407,6 @@ async def slash_hadith(
         LOGGER.error(f"Gagal mengambil data dari hadith_client: {e}")
         hadith_api_results = "Gagal mengambil data langsung dari HadithAPI. Menggunakan pengetahuan model."
 
-    # 2. Susun query untuk LLM agar memformat dan menerjemahkan hasilnya sesuai bahasa user
     query = (
         f"User mencari Hadits tentang topik: '{topic}' dalam kitab: '{book_display_name}'.\n\n"
         f"DATA MENTAH DARI HADITHAPI (Raw source):\n{hadith_api_results}\n\n"
