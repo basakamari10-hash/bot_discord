@@ -1,4 +1,4 @@
-rom typing import Optional
+from typing import Optional
 from database import QURAN_DB, SURAH_OFFICIAL_NAMES
 
 class PromptBuilder:
