@@ -1,6 +1,6 @@
 import time
 import asyncio
-from typing import Any, Optional
+from typing import Any, Optional, Dict
 
 import aiohttp
 from aiohttp import web
@@ -16,6 +16,9 @@ from search import SmartSearch
 from groq_client import GroqClient
 from prompt_builder import PromptBuilder
 
+# Tambahkan import HadithClient dari hadith_client.py Anda
+from hadith_client import HadithClient
+
 class IslamicBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
@@ -24,11 +27,13 @@ class IslamicBot(commands.Bot):
         
         self.session: Optional[aiohttp.ClientSession] = None
         self.groq_client: Optional[GroqClient] = None
+        self.hadith_client: Optional[HadithClient] = None  # Inisialisasi properti untuk client hadis
         self.user_languages: Dict[int, str] = {}
 
     async def setup_hook(self):
         self.session = aiohttp.ClientSession()
         self.groq_client = GroqClient(self.session)
+        self.hadith_client = HadithClient(self.session)  # Instansiasi HadithClient
         QURAN_DB.load_data()
         
         try:
@@ -258,9 +263,10 @@ async def process_slash_query(
         LOGGER.error(f"Error processing query '{prompt}': {e}")
         await interaction.followup.send(f"⚠️ An error occurred: {e}")
 
+
 @BOT.tree.command(name="help", description="Guide & command list")
 async def slash_help(interaction: discord.Interaction, language: Optional[str] = None):
-    guide_text = "📖 **Islamic.AI — Command Guide**\nUse `/quran`, `/ask`, `/fiqh`, `/hadith`, `/tafsir`, `/dua`, `/dalil`, `/search`, `/test`."
+    guide_text = "📖 **Islamic.AI — Command Guide**\nUse `/quran`, `/ask`, `/fiqh`, `/hadith`, `/tafsir`, `/dua`, `/dalil`, `/search`, `/ping`."
     if language:
         BOT.user_languages[interaction.user.id] = language
     await interaction.response.send_message(guide_text)
@@ -303,11 +309,40 @@ async def slash_fiqh(interaction: discord.Interaction, question: str, madhhab: O
     query = f"Fiqh Question: '{question}'. Requested Perspective: {chosen_madhhab.upper()}."
     await process_slash_query(interaction, query, language, CONFIG.MODEL_HEAVY, command_type="fiqh")
 
-@BOT.tree.command(name="hadith", description="Search authentic Hadiths")
-async def slash_hadith(interaction: discord.Interaction, topic: str, book: Optional[str] = None, language: Optional[str] = None):
+# =======================================================
+# UPDATED /HADITH COMMAND 
+# =======================================================
+@BOT.tree.command(name="hadith", description="Search authentic Hadiths via HadithAPI")
+async def slash_hadith(
+    interaction: discord.Interaction, 
+    topic: str, 
+    book: Optional[str] = None, 
+    language: Optional[str] = None
+):
     await interaction.response.defer()
-    requested_book = book if book else "Kutubus Sittah"
-    query = f"Hadith matan regarding '{topic}' in {requested_book}."
+    
+    if language:
+        BOT.user_languages[interaction.user.id] = language
+        
+    requested_book = book if book else "bukhari"
+    
+    # 1. Ambil data hadis dari hadith_client.py (hadithapi.com) terlebih dahulu
+    hadith_api_results = ""
+    try:
+        if BOT.hadith_client:
+            # Pastikan nama method ini sesuai dengan yang ada di hadith_client.py
+            hadith_api_results = await BOT.hadith_client.search_hadiths(topic=topic, book=requested_book)
+    except Exception as e:
+        LOGGER.error(f"Failed to fetch from hadith_client: {e}")
+        hadith_api_results = "Gagal mengambil data langsung dari HadithAPI. Menggunakan database umum/pengetahuan model."
+
+    # 2. Buat query yang menggabungkan hasil API hadis ke dalam prompt LLM
+    query = (
+        f"User is searching for Hadith about: '{topic}' in book: '{requested_book}'.\n\n"
+        f"RETRIEVED HADITH API DATA (from hadithapi.com):\n{hadith_api_results}\n\n"
+        f"Please structure a clean response featuring the authentic Hadith text (Arabic), translation, narrator, and book reference based on the retrieved data above."
+    )
+    
     await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT, command_type="hadith")
 
 @BOT.tree.command(name="dua", description="Search authentic Duas")
@@ -331,6 +366,7 @@ async def slash_search(interaction: discord.Interaction, query: str, language: O
 async def slash_ping(interaction: discord.Interaction):
     latency = round(BOT.latency * 1000)
     await interaction.response.send_message(f"🏓 Pong! Latency: `{latency}ms`")
+
 
 async def start_web_server():
     async def handle_ping(request):
