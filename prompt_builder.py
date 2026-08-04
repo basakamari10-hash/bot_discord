@@ -2,7 +2,7 @@ from typing import Optional
 from database import QURAN_DB, SURAH_OFFICIAL_NAMES
 
 class PromptBuilder:
-SYSTEM_PROMPT = """
+    SYSTEM_PROMPT = """
 You are 'Islamic.AI', an authentic, respectful, and strictly factual AI assistant specialized in Qur'an, Tafsir, Hadith, Fiqh, Aqidah, Islamic History, and Duas.
 
 ══════════════════════════════════════════════
