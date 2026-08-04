@@ -16,9 +16,10 @@ from search import SmartSearch
 from groq_client import GroqClient
 from prompt_builder import PromptBuilder
 
-# Import helper dan clients
-from hadith_client import HadithClient
+# Helper dan Clients
 from helper import get_tafsir_with_fallback
+from hadith_client import HadithClient
+from dua_client import DuaAPIClient  # <-- Import Client Doa Baru
 
 class IslamicBot(commands.Bot):
     def __init__(self):
@@ -29,12 +30,14 @@ class IslamicBot(commands.Bot):
         self.session: Optional[aiohttp.ClientSession] = None
         self.groq_client: Optional[GroqClient] = None
         self.hadith_client: Optional[HadithClient] = None
+        self.dua_client: Optional[DuaAPIClient] = None  # <-- Inisialisasi variabel doa
         self.user_languages: Dict[int, str] = {}
 
     async def setup_hook(self):
         self.session = aiohttp.ClientSession()
         self.groq_client = GroqClient(self.session)
         self.hadith_client = HadithClient(self.session)
+        self.dua_client = DuaAPIClient(self.session)  # <-- Setup instance doa
         QURAN_DB.load_data()
         
         try:
@@ -69,7 +72,7 @@ BOT = IslamicBot()
 @BOT.event
 async def on_ready():
     LOGGER.info(f"Islamic.AI Bot ({BOT.user}) is Online!")
-    await BOT.change_presence(activity=discord.Game(name="/help | /quran | /tafsir | /hadith"))
+    await BOT.change_presence(activity=discord.Game(name="/help | /quran | /tafsir | /hadith | /dua"))
 
 @BOT.event
 async def on_message(message: discord.Message):
@@ -234,7 +237,7 @@ async def process_slash_query(
         web_ref = await SmartSearch.execute_search(BOT.session, prompt)
         quran_ctx = PromptBuilder.extract_quran_context(prompt)
         
-        chosen_lang = language or BOT.user_languages.get(user_id)
+        chosen_lang = language or BOT.user_languages.get(user_id, "id")
         lang_instruction = PromptBuilder.create_language_instruction(chosen_lang)
 
         type_instruction = ""
@@ -244,6 +247,8 @@ async def process_slash_query(
             type_instruction = "\n\n[STRICT COMMAND MANDATE: TAFSIR SPECIFIC (/tafsir)]\nFocus strictly on Qur'anic exegesis and commentary."
         elif command_type == "fiqh":
             type_instruction = "\n\n[STRICT COMMAND MANDATE: FIQH SPECIFIC (/fiqh)]\nCRITICAL MADHHAB FOCUS: Dedicate 95% of your answer ONLY to the selected perspective without unnecessary tables."
+        elif command_type == "dua":
+            type_instruction = "\n\n[STRICT COMMAND MANDATE: DUA SPECIFIC (/dua)]\nCRITICAL: Never invent Arabic Duas or book sources. Strictly use provided API texts or known authentic Quranic/Sunnah prayers."
 
         final_prompt = (
             f"{lang_instruction}\n\n"
@@ -284,16 +289,12 @@ async def slash_ask(interaction: discord.Interaction, prompt: str, language: Opt
     await interaction.response.defer()
     await process_slash_query(interaction, prompt, language, CONFIG.MODEL_HEAVY, command_type="ask")
 
-
-# =======================================================
-# /TAFSIR COMMAND DENGAN FALLBACK MECHANISM (helper.py)
-# =======================================================
 @BOT.tree.command(name="tafsir", description="Detailed Qur'anic exegesis (with auto-fallback)")
 @app_commands.choices(
     source=[
-        app_commands.Choice(name="Tafsir Ibn Kathir", value="en-tafisr-ibn-kathir.json"),
-        app_commands.Choice(name="Tafsir Ma'ariful Qur'an", value="en-tafsir-maarif-ul-quran.json"),
-        app_commands.Choice(name="Tafsir Al-Jalalayn", value="tafsir-al-jalalayn.json")
+        app_commands.Choice(name="Tafsir Ibn Kathir", value="data/en-tafisr-ibn-kathir.json"),
+        app_commands.Choice(name="Tafsir Ma'ariful Qur'an", value="data/en-tafsir-maarif-ul-quran.json"),
+        app_commands.Choice(name="Tafsir Al-Jalalayn", value="data/tafsir-al-jalalayn.json")
     ]
 )
 async def slash_tafsir(
@@ -308,11 +309,9 @@ async def slash_tafsir(
         BOT.user_languages[interaction.user.id] = language
     chosen_lang = language or BOT.user_languages.get(interaction.user.id, "id")
 
-    # Tentukan sumber default jika user tidak milih
-    primary_file = source.value if source else "en-tafisr-ibn-kathir.json"
+    primary_file = source.value if source else "data/en-tafisr-ibn-kathir.json"
     primary_name = source.name if source else "Tafsir Ibn Kathir"
     
-    # Ekstrak verse kunci (contoh "1:4") dari input user
     parsed_verse = QURAN_DB.parse_verse_key(verse)
     if parsed_verse:
         surah, start_a, _ = parsed_verse
@@ -320,12 +319,10 @@ async def slash_tafsir(
     else:
         verse_key = verse.strip()
 
-    # Panggil fungsi fallback dari helper.py
     tafsir_text, used_source, is_fallback = get_tafsir_with_fallback(verse_key, primary_file)
     
     if tafsir_text:
         fallback_note = ""
-        # Jika pakai kitab cadangan, beri notifikasi ke AI supaya transparan
         if is_fallback:
             fallback_note = (
                 f"\n[NOTE: The requested Tafsir '{primary_name}' does not have an entry for verse '{verse_key}'. "
@@ -339,14 +336,12 @@ async def slash_tafsir(
             f"Please explain and structure this commentary clearly and translate EVERYTHING to {chosen_lang.upper()}."
         )
     else:
-        # Jika di SEMUA kitab kosong (sangat jarang terjadi)
         query = (
             f"User asked for Tafsir for verse '{verse_key}' using {primary_name}. "
             f"However, the specific JSON entry is missing in the local database. Please explain this honestly to the user in {chosen_lang.upper()}."
         )
     
     await process_slash_query(interaction, query, chosen_lang, CONFIG.MODEL_HEAVY, command_type="tafsir")
-
 
 @BOT.tree.command(name="fiqh", description="Ask Fiqh rulings with Madhhab selection")
 @app_commands.choices(
@@ -377,7 +372,6 @@ async def slash_fiqh(interaction: discord.Interaction, question: str, madhhab: O
     app_commands.Choice(name="Sunan Ibn Majah", value="sunan-ibn-majah"),
     app_commands.Choice(name="Muwatta Malik", value="muwatta-malik"),
     app_commands.Choice(name="Musnad Ahmad", value="musnad-ahmad"),
-    app_commands.Choice(name="Sunan al-Darimi", value="sunan-darimi"),
 ])
 async def slash_hadith(
     interaction: discord.Interaction, 
@@ -392,37 +386,61 @@ async def slash_hadith(
         
     book_value = book.value if book else None
     book_display_name = book.name if book else "Semua Kitab Utama"
-    
     chosen_lang = language or BOT.user_languages.get(interaction.user.id, "id")
     
-    hadith_api_results = ""
+    raw_hadith_data = ""
     try:
         if BOT.hadith_client:
-            hadith_api_results = await BOT.hadith_client.search_hadiths(
+            raw_hadith_data = await BOT.hadith_client.search_hadiths(
                 topic=topic, 
                 book=book_value, 
                 language=chosen_lang
             )
     except Exception as e:
         LOGGER.error(f"Gagal mengambil data dari hadith_client: {e}")
-        hadith_api_results = "Gagal mengambil data langsung dari HadithAPI. Menggunakan pengetahuan model."
+        raw_hadith_data = "Gagal mengambil data langsung dari HadithAPI. Menggunakan pengetahuan model."
 
     query = (
         f"User mencari Hadits tentang topik: '{topic}' dalam kitab: '{book_display_name}'.\n\n"
-        f"DATA MENTAH DARI HADITHAPI (Raw source):\n{hadith_api_results}\n\n"
+        f"DATA MENTAH DARI HADITHAPI:\n{raw_hadith_data}\n\n"
         f"TUGAS:\n"
         f"1. Tampilkan teks Matan Hadits dalam bahasa Arab secara utuh dan original.\n"
-        f"2. Terjemahkan nomor hadits, nama bab/heading, perawi, serta arti hadits tersebut SEPENUHNYA ke dalam bahasa **{chosen_lang.upper()}** berdasarkan data mentah di atas.\n"
-        f"3. Pastikan formatnya rapi, sopan, dan sesuai standar referensi ilmiah Islam."
+        f"2. Terjemahkan nomor hadits, nama bab/heading, perawi, serta arti hadits tersebut SEPENUHNYA ke dalam bahasa **{chosen_lang.upper()}**.\n"
+        f"3. JANGAN mengarang/halusinasi nomor hadits."
     )
     
     await process_slash_query(interaction, query, chosen_lang, CONFIG.MODEL_LIGHT, command_type="hadith")
 
-@BOT.tree.command(name="dua", description="Search authentic Duas")
+# =========================================================
+# LOGIKA COMMAND DUA BARU MENGGUNAKAN API (dua_client.py)
+# =========================================================
+@BOT.tree.command(name="dua", description="Cari doa sahih terverifikasi dari Qur'an & Sunnah via API")
 async def slash_dua(interaction: discord.Interaction, topic: str, language: Optional[str] = None):
     await interaction.response.defer()
-    query = f"Provide authentic Duas for: '{topic}'."
-    await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT, command_type="dua")
+    
+    if language:
+        BOT.user_languages[interaction.user.id] = language
+    chosen_lang = language or BOT.user_languages.get(interaction.user.id, "id")
+    
+    raw_dua_data = ""
+    try:
+        if BOT.dua_client:
+            raw_dua_data = await BOT.dua_client.search_dua(topic=topic, language=chosen_lang)
+    except Exception as e:
+        LOGGER.error(f"Gagal mengambil data dari dua_client: {e}")
+        raw_dua_data = "[API GAGAL: Jangan mengarang teks Arab atau sumber.]"
+
+    query = (
+        f"User mencari Doa otentik tentang topik: '{topic}'.\n\n"
+        f"DATA MENTAH DARI ISLAMICAPI:\n{raw_dua_data}\n\n"
+        f"TUGAS & ATURAN:\n"
+        f"1. Tampilkan teks Doa dalam bahasa Arab secara utuh HANYA BERSUMBER dari data di atas.\n"
+        f"2. Terjemahkan arti serta sumber rujukannya ke dalam bahasa **{chosen_lang.upper()}**.\n"
+        f"3. JANGAN mengarang (halusinasi) teks Arab, sumber kitab, pengarang, atau URL palsu.\n"
+        f"4. Jika data dari API tertulis tidak ditemukan, berikan respon jujur bahwa doa tersebut tidak ada di database."
+    )
+    
+    await process_slash_query(interaction, query, chosen_lang, CONFIG.MODEL_LIGHT, command_type="dua")
 
 @BOT.tree.command(name="dalil", description="Find evidence from Qur'an & Sunnah")
 async def slash_dalil(interaction: discord.Interaction, topic: str, language: Optional[str] = None):
@@ -440,7 +458,6 @@ async def slash_ping(interaction: discord.Interaction):
     latency = round(BOT.latency * 1000)
     await interaction.response.send_message(f"🏓 Pong! Latency: `{latency}ms`")
 
-
 async def start_web_server():
     async def handle_ping(request):
         return web.Response(text="Bot is alive!", status=200)
@@ -452,8 +469,13 @@ async def start_web_server():
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", CONFIG.PORT)
-    await site.start()
-    LOGGER.info(f"Keep-alive web server bound to port {CONFIG.PORT}")
+    
+    try:
+        await site.start()
+        LOGGER.info(f"Keep-alive web server bound to port {CONFIG.PORT}")
+    except OSError as e:
+        # Jika port error (Address already in use), jangan matikan bot
+        LOGGER.warning(f"⚠️ Port {CONFIG.PORT} sedang dipakai. Web server dilewati, Bot jalan terus! {e}")
 
 async def main():
     if not CONFIG.DISCORD_TOKEN:
