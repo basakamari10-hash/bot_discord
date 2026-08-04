@@ -5,7 +5,7 @@ from config import CONFIG
 from logger import LOGGER
 
 class IslamicAPIClient:
-    """Universal Client for all endpoints in islamicapi.com"""
+    """Universal Client for official endpoints in islamicapi.com"""
     BASE_URL = "https://islamicapi.com/api"
 
     def __init__(self, session: aiohttp.ClientSession):
@@ -42,8 +42,14 @@ class IslamicAPIClient:
     async def get_asmaul_husna(self, name: str) -> str:
         return await self._fetch_and_dump("asmaulhusna", {"search": name})
         
-    async def get_prophet_story(self, prophet_name: str) -> str:
-        return await self._fetch_and_dump("kisahnabi", {"search": prophet_name})
-        
     async def get_prayer_times(self, city: str) -> str:
-        return await self._fetch_and_dump("shalat", {"city": city})
+        return await self._fetch_and_dump("prayertime", {"city": city})
+        
+    async def get_fasting_time(self, city: str) -> str:
+        return await self._fetch_and_dump("fastingtime", {"city": city})
+
+    async def get_zakat_nisab(self, asset_value: str) -> str:
+        return await self._fetch_and_dump("zakatnisab", {"value": asset_value})
+
+    async def get_ruqyah(self, ailment: str) -> str:
+        return await self._fetch_and_dump("ruqyah", {"search": ailment})
