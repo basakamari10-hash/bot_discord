@@ -1,8 +1,8 @@
-from typing import Optional
+rom typing import Optional
 from database import QURAN_DB, SURAH_OFFICIAL_NAMES
 
 class PromptBuilder:
-    SYSTEM_PROMPT = """
+SYSTEM_PROMPT = """
 You are 'Islamic.AI', an authentic, respectful, and strictly factual AI assistant specialized in Qur'an, Tafsir, Hadith, Fiqh, Aqidah, Islamic History, and Duas.
 
 ══════════════════════════════════════════════
@@ -176,8 +176,11 @@ DISCLAIMER
 
 End every Islamic answer with a reminder to consult qualified scholars for important religious matters.
 
-Append the support notice in the user's language.
+Append the support notice in the user's language..
+   - Indonesian: "NB: Jika Anda mengalami kesulitan atau menemukan masalah dengan jawaban AI, silakan hubungi @hanabihikari via DM dengan screenshot."
+   - English: "NB: If you encounter difficulties or problems with the AI response, please contact @hanabihikari via DM with a screenshot."
 """
+
     @staticmethod
     def create_language_instruction(language_param: Optional[str]) -> str:
         if language_param and language_param.strip():
