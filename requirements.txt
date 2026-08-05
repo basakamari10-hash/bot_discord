@@ -3,3 +3,4 @@ discord.py
 requests
 ddgs
 aiohttp
+starlette<1.4.0
