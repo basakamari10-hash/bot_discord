@@ -1,5 +1,7 @@
 import time
 import asyncio
+import json
+import os
 from typing import Any, Optional, Dict
 
 import aiohttp
@@ -17,9 +19,44 @@ from groq_client import GroqClient
 from prompt_builder import PromptBuilder
 
 # Clients
-from helper import get_tafsir_with_fallback
 from hadith_client import HadithClient
 from islamic_client import IslamicAPIClient
+
+def get_tafsir_with_fallback(verse_key: str, primary_file: str):
+    """Fungsi fallback tafsir langsung di main.py (Tanpa file helper.py terpisah)"""
+    fallbacks = [
+        "data/en-tafisr-ibn-kathir.json",
+        "data/tafsir-al-jalalayn.json",
+        "data/en-tafisr-maarif-ul-quran.json"
+    ]
+    
+    try:
+        if os.path.exists(primary_file):
+            with open(primary_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                if verse_key in data:
+                    entry = data[verse_key]
+                    text = entry.get('text', str(entry)) if isinstance(entry, dict) else str(entry)
+                    return text, primary_file, False
+    except Exception as e:
+        LOGGER.error(f"Gagal membaca file tafsir utama {primary_file}: {e}")
+
+    for fb in fallbacks:
+        if fb == primary_file:
+            continue
+        try:
+            if os.path.exists(fb):
+                with open(fb, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    if verse_key in data:
+                        entry = data[verse_key]
+                        text = entry.get('text', str(entry)) if isinstance(entry, dict) else str(entry)
+                        return text, fb, True
+        except Exception as e:
+            LOGGER.error(f"Gagal membaca file fallback {fb}: {e}")
+            
+    return None, primary_file, False
+
 
 class IslamicBot(commands.Bot):
     def __init__(self):
@@ -555,5 +592,5 @@ async def main():
 if __name__ == "__main__":
     try:
         asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
+    except (KeyboardInsights, KeyboardInterrupt, SystemExit):
         LOGGER.info("Terminated.")
