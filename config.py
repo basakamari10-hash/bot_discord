@@ -5,6 +5,13 @@ from dataclasses import dataclass, field
 def _get_secret(key: str, default: str = "") -> str:
     if hasattr(st, "secrets"):
         try:
+            # Cek jika ada format section [ISLAMICAPI] di secrets.toml
+            if key == "ISLAMIC_API_KEY" and "ISLAMICAPI" in st.secrets:
+                val = st.secrets["ISLAMICAPI"].get("API_KEY") or st.secrets["ISLAMICAPI"].get("ISLAMIC_API_KEY")
+                if val:
+                    return str(val)
+
+            # Cek standar st.secrets.get()
             val = st.secrets.get(f"{key}_QURAN") or st.secrets.get(key)
             if val:
                 return str(val)
@@ -18,6 +25,9 @@ class Config:
     GROQ_API_KEY: str = field(default_factory=lambda: _get_secret("GROQ_API_KEY"))
     STREAMLIT_URL: str = field(default_factory=lambda: _get_secret("STREAMLIT_URL", "https://your-app-name.streamlit.app"))
     HADITH_API_KEY: str = field(default_factory=lambda: _get_secret("HADITH_API_KEY"))
+    # ⚠️ SUDAH DITAMBAHKAN KUNCI ISLAMIC_API_KEY DI SINI! ⚠️
+    ISLAMIC_API_KEY: str = field(default_factory=lambda: _get_secret("ISLAMIC_API_KEY"))
+    
     PORT: int = field(default_factory=lambda: int(os.getenv("PORT", "8080")))
     
     MODEL_HEAVY: str = "openai/gpt-oss-120b"
