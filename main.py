@@ -157,7 +157,6 @@ async def on_message(message: discord.Message):
             quran_ctx = PromptBuilder.extract_quran_context(clean_prompt)
             
             user_lang = BOT.user_languages.get(message.author.id, "en")
-            # ⚠️ FIXED: Only passing 1 argument as required by your PromptBuilder
             lang_instruction = PromptBuilder.create_language_instruction(user_lang)
 
             prompt = (
@@ -279,7 +278,6 @@ async def process_slash_query(
             BOT.user_languages[user_id] = language
             
         saved_lang = BOT.user_languages.get(user_id, "en")
-        # ⚠️ FIXED: Only passing 1 argument as required by your PromptBuilder
         lang_instruction = PromptBuilder.create_language_instruction(saved_lang)
 
         type_instruction = ""
@@ -318,10 +316,48 @@ async def process_slash_query(
 
 @BOT.tree.command(name="help", description="Guide & command list")
 async def slash_help(interaction: discord.Interaction, language: Optional[str] = None):
-    guide_text = "📖 **Islamic.AI — Command Guide**\nUse `/quran`, `/ask`, `/fiqh`, `/hadith`, `/tafsir`, `/dua`, `/asmaulhusna`, `/prayertimes`, `/fasting`, `/zakat`, `/ruqyah`, `/dalil`, `/search`, `/ping`."
     if language:
         BOT.user_languages[interaction.user.id] = language
-    await interaction.response.send_message(guide_text)
+        
+    embed = discord.Embed(
+        title="📖 Islamic.AI — Command Guide",
+        description="Assalamu'alaikum! Here is the list of available commands you can use:",
+        color=discord.Color.green()
+    )
+    
+    embed.add_field(name="💬 General & Knowledge", value=(
+        "`/ask` - Ask anything about Islam\n"
+        "`/dalil` - Find evidence/Dalil from Qur'an & Sunnah\n"
+        "`/fiqh` - Ask Fiqh rulings with Madhhab selection\n"
+        "`/search` - Search web references for up-to-date info"
+    ), inline=False)
+
+    embed.add_field(name="📖 Qur'an, Tafsir & Hadith", value=(
+        "`/quran` - Display exact Qur'an Arabic text and translation\n"
+        "`/tafsir` - Read Qur'anic exegesis (Ibn Kathir, Al-Jalalayn, etc.)\n"
+        "`/hadith` - Search authentic Hadiths based on topics and books"
+    ), inline=False)
+
+    embed.add_field(name="🤲 Dua, Ruqyah & Asmaul Husna", value=(
+        "`/dua` - Find authentic Duas from Quran & Sunnah\n"
+        "`/ruqyah` - Ruqyah verses and healing guidance\n"
+        "`/asmaulhusna` - Learn the meaning of the 99 Names of Allah"
+    ), inline=False)
+    
+    embed.add_field(name="🕌 Daily Muslim Tools", value=(
+        "`/prayertimes` - Accurate prayer times for your city\n"
+        "`/fasting` - Fasting times (Suhoor/Iftar) for your city\n"
+        "`/zakat` - Calculate Zakat Nisab using any currency (IDR, USD, SAR, etc.)"
+    ), inline=False)
+    
+    embed.add_field(name="⚙️ System", value=(
+        "`/ping` - Check bot latency\n"
+        "`/help` - Display this guide"
+    ), inline=False)
+    
+    embed.set_footer(text="May this bot be beneficial for your daily worship!")
+    
+    await interaction.response.send_message(embed=embed)
 
 @BOT.tree.command(name="quran", description="Get exact Qur'an Arabic text and translation")
 async def slash_quran(interaction: discord.Interaction, surah: int, verse: int, verse_to: Optional[int] = None, language: Optional[str] = None):
@@ -341,7 +377,7 @@ async def slash_ask(interaction: discord.Interaction, prompt: str, language: Opt
 @app_commands.choices(
     source=[
         app_commands.Choice(name="Tafsir Ibn Kathir", value="data/en-tafisr-ibn-kathir.json"),
-        app_commands.Choice(name="Tafsir Ma'ariful Qur'an", value="data/en-tafsir-maarif-ul-quran.json"),
+        app_commands.Choice(name="Tafsir Ma'ariful Qur'an", value="data/en-tafisr-maarif-ul-quran.json"),
         app_commands.Choice(name="Tafsir Al-Jalalayn", value="data/tafsir-al-jalalayn.json")
     ]
 )
@@ -522,7 +558,6 @@ async def slash_zakat(interaction: discord.Interaction, currency_code: str, lang
     if language:
         BOT.user_languages[interaction.user.id] = language
     
-    # Memastikan input valid (minimal 3 huruf, dijadikan kecil) misal "IDR" atau "idr"
     clean_currency = currency_code[:3].lower() if len(currency_code) >= 3 else "usd"
     
     raw_data = await BOT.islamic_client.get_zakat_nisab(clean_currency) if BOT.islamic_client else ""
