@@ -49,7 +49,7 @@ class IslamicAPIClient:
             return await r.text()
 
     async def get_zakat_nisab(self, currency: str) -> str:
-      
+        # Currency ISO code (usd, idr, gbp, dll)
         params = {"standard": "classical", "currency": currency[:3].lower(), "unit": "g"}
         if self.api_key: params["api_key"] = self.api_key
         
@@ -64,13 +64,13 @@ class IslamicAPIClient:
             if r.status == 200:
                 data = await r.json()
                 names = data.get("data", {}).get("names", [])
-                # Filter 99 nama hanya ke nama yang dicari user untuk menghemat token
+                # Filter 99 nama hanya ke nama yang dicari user
                 matched = [n for n in names if name_query.lower() in n.get("transliteration", "").lower() or name_query.lower() in n.get("translation", "").lower()]
                 return json.dumps(matched if matched else names[:3], indent=2)
             return await r.text()
 
     async def get_dua(self, lang_code: str) -> str:
-        # Mengambil random doa (karena API tidak mendukung search topic)
+        # Mengambil random doa 
         params = {"type": "translation", "lang": lang_code[:2].lower(), "random": "true"}
         if self.api_key: params["api_key"] = self.api_key
         
@@ -78,7 +78,7 @@ class IslamicAPIClient:
             return await r.text()
 
     async def get_ruqyah(self, lang_code: str) -> str:
-        # Mengambil random ruqyah (karena API tidak mendukung search topic)
+        # Mengambil random ruqyah
         params = {"type": "instant", "lang": lang_code[:2].lower(), "program": "brief-ruqya", "source": "from-quran", "random": "true"}
         if self.api_key: params["api_key"] = self.api_key
         
