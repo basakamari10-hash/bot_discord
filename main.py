@@ -23,7 +23,7 @@ from hadith_client import HadithClient
 from islamic_client import IslamicAPIClient
 
 def get_tafsir_with_fallback(verse_key: str, primary_file: str):
-    """Fungsi fallback tafsir langsung di main.py (Tanpa file helper.py terpisah)"""
+    """Fallback logic safe inside main.py"""
     fallbacks = [
         "data/en-tafisr-ibn-kathir.json",
         "data/tafsir-al-jalalayn.json",
@@ -156,8 +156,9 @@ async def on_message(message: discord.Message):
             web_ref = await SmartSearch.execute_search(BOT.session, clean_prompt)
             quran_ctx = PromptBuilder.extract_quran_context(clean_prompt)
             
-            user_lang = BOT.user_languages.get(message.author.id)
-            lang_instruction = PromptBuilder.create_language_instruction(user_lang, clean_prompt)
+            user_lang = BOT.user_languages.get(message.author.id, "en")
+            # ⚠️ FIXED: Only passing 1 argument as required by your PromptBuilder
+            lang_instruction = PromptBuilder.create_language_instruction(user_lang)
 
             prompt = (
                 f"{lang_instruction}\n\n"
@@ -277,8 +278,9 @@ async def process_slash_query(
         if language:
             BOT.user_languages[user_id] = language
             
-        saved_lang = BOT.user_languages.get(user_id)
-        lang_instruction = PromptBuilder.create_language_instruction(saved_lang, prompt)
+        saved_lang = BOT.user_languages.get(user_id, "en")
+        # ⚠️ FIXED: Only passing 1 argument as required by your PromptBuilder
+        lang_instruction = PromptBuilder.create_language_instruction(saved_lang)
 
         type_instruction = ""
         if command_type == "hadith":
@@ -436,10 +438,7 @@ async def slash_hadith(
     raw_hadith_data = ""
     try:
         if BOT.hadith_client:
-            raw_hadith_data = await BOT.hadith_client.search_hadiths(
-                topic=topic, 
-                book=book_value
-            )
+            raw_hadith_data = await BOT.hadith_client.search_hadiths(topic=topic, book=book_value)
     except Exception as e:
         LOGGER.error(f"Failed to fetch data from hadith_client: {e}")
         raw_hadith_data = "Failed to fetch from API. Please rely on standard knowledge."
@@ -452,7 +451,6 @@ async def slash_hadith(
         f"2. Translate the Hadith, narrator, and meaning matching the user's language.\n"
         f"3. Do NOT hallucinate hadith numbers or text not present in the data."
     )
-    
     await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT, command_type="hadith")
 
 # =========================================================
@@ -465,10 +463,13 @@ async def slash_dua(interaction: discord.Interaction, topic: str, language: Opti
     if language:
         BOT.user_languages[interaction.user.id] = language
     
-    raw_data = await BOT.islamic_client.get_dua(topic) if BOT.islamic_client else ""
+    chosen_lang = language or BOT.user_languages.get(interaction.user.id, "en")
+    raw_data = await BOT.islamic_client.get_dua(chosen_lang) if BOT.islamic_client else ""
+    
     query = (
-        f"User is searching for a Dua about: '{topic}'.\n\nISLAMICAPI DATA:\n{raw_data}\n\n"
-        f"TASK: Show the Arabic text from the data above, then translate the meaning and reference naturally matching the user's input language without hallucinating."
+        f"User is searching for a Dua about: '{topic}'.\n\n"
+        f"ISLAMICAPI DATA (RANDOM DUA):\n{raw_data}\n\n"
+        f"TASK: Answer the user's topic. If the random dua from the API above is relevant to '{topic}', show its Arabic text and translate it. If not relevant, rely on your own authentic knowledge to provide the correct Dua."
     )
     await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT, command_type="dua")
 
@@ -478,7 +479,9 @@ async def slash_asmaulhusna(interaction: discord.Interaction, name: str, languag
     if language:
         BOT.user_languages[interaction.user.id] = language
     
-    raw_data = await BOT.islamic_client.get_asmaul_husna(name) if BOT.islamic_client else ""
+    chosen_lang = language or BOT.user_languages.get(interaction.user.id, "en")
+    raw_data = await BOT.islamic_client.get_asmaul_husna(chosen_lang, name) if BOT.islamic_client else ""
+    
     query = (
         f"Explain the Asmaul Husna: '{name}'.\n\nISLAMICAPI DATA:\n{raw_data}\n\n"
         f"TASK: Based on the data, explain the profound meaning and how to apply this attribute in daily life. Match the user's input language."
@@ -494,7 +497,7 @@ async def slash_prayertimes(interaction: discord.Interaction, city: str, languag
     raw_data = await BOT.islamic_client.get_prayer_times(city) if BOT.islamic_client else ""
     query = (
         f"Show prayer times for city '{city}'.\n\nISLAMICAPI DATA:\n{raw_data}\n\n"
-        f"TASK: Present the prayer times neatly using bullet points matching the user's input language."
+        f"TASK: Present the prayer times neatly using bullet points matching the user's input language. Do NOT show the raw API JSON to the user."
     )
     await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT, command_type="general")
 
@@ -507,22 +510,28 @@ async def slash_fasting(interaction: discord.Interaction, city: str, language: O
     raw_data = await BOT.islamic_client.get_fasting_time(city) if BOT.islamic_client else ""
     query = (
         f"Show fasting times (Suhoor and Iftar) for city '{city}'.\n\nISLAMICAPI DATA:\n{raw_data}\n\n"
-        f"TASK: Present the Suhoor and Iftar timings neatly matching the user's input language."
+        f"TASK: Present the Suhoor and Iftar timings neatly matching the user's input language. Do NOT show the raw API JSON to the user."
     )
     await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT, command_type="general")
 
-@BOT.tree.command(name="zakat", description="Calculate Zakat Nisab and threshold rules")
-async def slash_zakat(interaction: discord.Interaction, asset_value: str, language: Optional[str] = None):
+
+# ⚠️ COMMAND ZAKAT BEBAS INPUT 3 HURUF KODE MATA UANG ⚠️
+@BOT.tree.command(name="zakat", description="Calculate Zakat Nisab (Any Currency, e.g. IDR, USD, SAR)")
+async def slash_zakat(interaction: discord.Interaction, currency_code: str, language: Optional[str] = None):
     await interaction.response.defer()
     if language:
         BOT.user_languages[interaction.user.id] = language
     
-    raw_data = await BOT.islamic_client.get_zakat_nisab(asset_value) if BOT.islamic_client else ""
+    # Memastikan input valid (minimal 3 huruf, dijadikan kecil) misal "IDR" atau "idr"
+    clean_currency = currency_code[:3].lower() if len(currency_code) >= 3 else "usd"
+    
+    raw_data = await BOT.islamic_client.get_zakat_nisab(clean_currency) if BOT.islamic_client else ""
     query = (
-        f"Calculate Zakat Nisab for asset value/amount: '{asset_value}'.\n\nISLAMICAPI DATA:\n{raw_data}\n\n"
-        f"TASK: Provide clear Zakat computation guidelines, nisab thresholds, and whether it meets the obligation based on the data. Match the user's input language."
+        f"Calculate Zakat Nisab for currency: '{clean_currency.upper()}'.\n\nISLAMICAPI DATA:\n{raw_data}\n\n"
+        f"TASK: Provide clear Zakat computation guidelines and the nisab thresholds in {clean_currency.upper()} based on the data. Match the user's input language."
     )
     await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT, command_type="general")
+
 
 @BOT.tree.command(name="ruqyah", description="Find authentic Ruqyah verses and duas for healing")
 async def slash_ruqyah(interaction: discord.Interaction, ailment: str, language: Optional[str] = None):
@@ -530,10 +539,12 @@ async def slash_ruqyah(interaction: discord.Interaction, ailment: str, language:
     if language:
         BOT.user_languages[interaction.user.id] = language
     
-    raw_data = await BOT.islamic_client.get_ruqyah(ailment) if BOT.islamic_client else ""
+    chosen_lang = language or BOT.user_languages.get(interaction.user.id, "en")
+    raw_data = await BOT.islamic_client.get_ruqyah(chosen_lang) if BOT.islamic_client else ""
+    
     query = (
-        f"Find Ruqyah guidance/verses for ailment or protection: '{ailment}'.\n\nISLAMICAPI DATA:\n{raw_data}\n\n"
-        f"TASK: Show the authentic Quranic verses or Sunnah duas used for Ruqyah from the data, along with their translations, matching the user's input language."
+        f"Find Ruqyah guidance/verses for ailment or protection: '{ailment}'.\n\nISLAMICAPI DATA (RANDOM RUQYAH VERSE):\n{raw_data}\n\n"
+        f"TASK: Use your own authentic knowledge to answer what Quranic verses/Duas are recommended for '{ailment}'. Also, present the random Ruqyah verse from the API above as an example."
     )
     await process_slash_query(interaction, query, language, CONFIG.MODEL_LIGHT, command_type="general")
 
@@ -592,5 +603,5 @@ async def main():
 if __name__ == "__main__":
     try:
         asyncio.run(main())
-    except (KeyboardInsights, KeyboardInterrupt, SystemExit):
+    except (KeyboardInterrupt, SystemExit):
         LOGGER.info("Terminated.")
